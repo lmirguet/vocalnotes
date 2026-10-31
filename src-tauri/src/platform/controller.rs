@@ -1,12 +1,19 @@
 //! Continuous prototype orchestration. Buffers are memory-only and fail closed.
 use super::{
-    audio::AudioFrame,
-    capture::{CaptureControl, NativeCapture},
     lifecycle::LifecycleGuard,
-    mistral::{MistralInterpreter, MistralStt, SttEvent, SttReader},
     pipeline::{PassageGate, PassageStep},
     probe::{Probe, Ticket},
 };
+use crate::adapters::{
+    mistral_interpreter::MistralInterpreter,
+    mistral_stt::{MistralStt, SttReader},
+};
+use crate::audio::{
+    capture::{CaptureControl, NativeCapture},
+    normalization::AudioFrame,
+};
+use crate::config::preferences::{ModelPreferences, Preferences, PreferencesStore};
+use crate::ports::stt::SttEvent;
 use crate::ports::{
     interpreter::{InterpretationContext, Interpreter, Interruption},
     stt::{SttInput, SttOutput},
@@ -35,17 +42,94 @@ struct Finalized {
 pub struct Controller {
     pub core: Arc<Mutex<Probe>>,
     active: Arc<Mutex<Option<Active>>>,
+    preferences: Arc<Mutex<Result<PreferencesStore, &'static str>>>,
+    frozen_models: Arc<Mutex<Option<ModelPreferences>>>,
 }
 
 impl Controller {
     pub fn new(core: Probe) -> Self {
+        Self::with_preferences(core, Ok(PreferencesStore::memory()))
+    }
+
+    pub fn with_preferences(
+        core: Probe,
+        preferences: Result<PreferencesStore, &'static str>,
+    ) -> Self {
         Self {
             core: Arc::new(Mutex::new(core)),
             active: Arc::new(Mutex::new(None)),
+            preferences: Arc::new(Mutex::new(preferences)),
+            frozen_models: Arc::new(Mutex::new(None)),
+        }
+    }
+    pub fn preferences(&self) -> Result<Preferences, &'static str> {
+        Ok(self
+            .preferences
+            .lock()
+            .map_err(|_| "Préférences indisponibles.")?
+            .as_ref()
+            .map_err(|e| *e)?
+            .get())
+    }
+    pub fn set_models(&self, models: ModelPreferences) -> Result<Preferences, &'static str> {
+        self.preferences
+            .lock()
+            .map_err(|_| "Préférences indisponibles.")?
+            .as_mut()
+            .map_err(|e| *e)?
+            .set_models(models)
+    }
+    pub fn models_for_start(&self, resume: bool) -> Result<ModelPreferences, &'static str> {
+        let mut frozen = self
+            .frozen_models
+            .lock()
+            .map_err(|_| "Configuration de session indisponible.")?;
+        if resume {
+            if let Some(models) = &*frozen {
+                return Ok(models.clone());
+            }
+        }
+        let models = self
+            .preferences
+            .lock()
+            .map_err(|_| "Préférences indisponibles.")?
+            .as_ref()
+            .map_err(|e| *e)?
+            .session_models()?;
+        *frozen = Some(models.clone());
+        Ok(models)
+    }
+    pub fn remember_saved_note(&self) {
+        let path = self
+            .core
+            .lock()
+            .ok()
+            .and_then(|core| core.saved_destination());
+        if let Some(path) = path {
+            let result = self
+                .preferences
+                .lock()
+                .map_err(|_| "Préférences indisponibles.")
+                .and_then(|mut store| store.as_mut().map_err(|e| *e)?.remember_note(&path));
+            if result.is_err() {
+                crate::diagnostics::event(
+                    "Préférences : dernière destination non mémorisée ; note sauvegardée.",
+                );
+                if let Ok(mut core) = self.core.lock() {
+                    core.message(
+                        "Note sauvegardée ; mémorisation de la dernière destination impossible.",
+                    );
+                }
+            }
         }
     }
 
     pub fn stop(&self, pause: bool, message: &str) {
+        crate::diagnostics::event(if pause {
+            "Commande : pause"
+        } else {
+            "Commande : arrêt/invalidation"
+        });
         // Same lock order for start, device installation and stop.
         if let Ok(mut active) = self.active.lock() {
             if let Some(session) = active.take() {
@@ -65,12 +149,13 @@ impl Controller {
         }
     }
 
-    fn stop_current(&self, ticket: &Ticket, pause: bool, message: &str) {
+    fn stop_current(&self, ticket: &Ticket, pause: bool, message: &'static str) {
         if let Ok(mut active) = self.active.lock() {
             if let Ok(mut core) = self.core.lock() {
                 if !core.same_session(ticket) {
                     return;
                 }
+                crate::diagnostics::event(message);
                 if let Some(session) = active.take() {
                     session.opening_stop.store(true, Ordering::Release);
                     if let Some(capture) = session.capture {
@@ -109,6 +194,7 @@ impl Controller {
         if active.is_some() {
             return Err("Session déjà active ou en initialisation.");
         }
+        let models = self.models_for_start(resume)?;
         let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
         core.start_voice(resume)?;
         core.message(
@@ -125,7 +211,9 @@ impl Controller {
         });
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
-            let result = this.session(ticket.clone(), receiver, opening_stop).await;
+            let result = this
+                .session(ticket.clone(), receiver, opening_stop, models)
+                .await;
             if let Err(message) = result {
                 this.stop_current(&ticket, false, message);
             }
@@ -146,6 +234,7 @@ impl Controller {
         ticket: Ticket,
         mut cancel: watch::Receiver<bool>,
         opening_stop: Arc<AtomicBool>,
+        models: ModelPreferences,
     ) -> Result<(), &'static str> {
         let os_controller = self.clone();
         let os_ticket = ticket.clone();
@@ -189,9 +278,9 @@ impl Controller {
         let work = async {
             tokio::try_join!(
                 capture_frames(capture, frames_tx),
-                self.transcribe(&ticket, frames_rx, final_tx, priority_tx),
-                self.interpret(&ticket, final_rx),
-                self.priority(&ticket, priority_rx),
+                self.transcribe(&ticket, frames_rx, final_tx, priority_tx, &models.stt),
+                self.interpret(&ticket, final_rx, &models.llm),
+                self.priority(&ticket, priority_rx, &models.llm),
             )?;
             Ok(())
         };
@@ -210,6 +299,7 @@ impl Controller {
         mut frames: mpsc::Receiver<AudioFrame>,
         finals: mpsc::Sender<Finalized>,
         priority: watch::Sender<Option<String>>,
+        selection: &crate::config::preferences::ServiceSelection,
     ) -> Result<(), &'static str> {
         let mut gate = PassageGate::default();
         let mut writer = None;
@@ -222,6 +312,7 @@ impl Controller {
                     match event? {
                         SttEvent::Final { .. } => return Err("Final STT prématuré ; passage non intégré."),
                         SttEvent::Provisional(text) => {
+                            self.update(ticket, |c| c.transcript_delta(&text));
                             append_provisional(&priority, &text)?;
                         }
                         SttEvent::Other => {}
@@ -232,10 +323,12 @@ impl Controller {
                     match gate.push(frame)? {
                         PassageStep::Wait => {}
                         PassageStep::Start(pcm) => {
+                            crate::diagnostics::event("STT : début de passage détecté par VAD");
+                            self.update(ticket, |c| c.transcript_start_passage());
                             passage_id += 1;
                             priority.send_replace(Some(String::new()));
                             self.update(ticket, |c| c.measure("stt", 1, ""));
-                            let (w, r) = MistralStt::connect_explicit().await?.into_parts();
+                            let (w, r) = MistralStt::connect_selected(selection).await?.into_parts();
                             writer = Some(w); reader = Some(r);
                             SttInput::append_pcm(writer.as_mut().unwrap(), &pcm).await?;
                             self.update(ticket, |c| c.measure("audio", pcm.len() as u64 / 32, ""));
@@ -245,6 +338,7 @@ impl Controller {
                             self.update(ticket, |c| c.measure("audio", 30, ""));
                         }
                         PassageStep::End(pcm) => {
+                            crate::diagnostics::event("STT : fin de passage, attente transcription.done");
                             let w = writer.as_mut().ok_or("Passage STT absent.")?;
                             SttInput::append_pcm(w, &pcm).await?;
                             self.update(ticket, |c| c.measure("audio", 30, ""));
@@ -254,12 +348,17 @@ impl Controller {
                             loop {
                                 match read_event(&mut reader).await? {
                                     SttEvent::Final { text, model } => {
+                                        crate::diagnostics::numbers("STT : transcription.done reçu (contenu masqué)", &[("text_bytes", text.len() as u64)]);
                                         self.update(ticket, |c| c.measure("stt_model", 0, &model));
                                         self.update(ticket, |c| c.measure("stt_final_ms", finalize_started.elapsed().as_millis() as u64, ""));
+                                        self.update(ticket, |c| c.transcript_done(&text));
                                         finals.try_send(Finalized { passage_id, text }).map_err(|_| "Saturation interprétation : passages non intégrés, arrêt sans spool.")?;
                                         break;
                                     }
-                                    SttEvent::Provisional(text) => append_provisional(&priority, &text)?,
+                                    SttEvent::Provisional(text) => {
+                                        self.update(ticket, |c| c.transcript_delta(&text));
+                                        append_provisional(&priority, &text)?;
+                                    },
                                     SttEvent::Other => {}
                                 }
                             }
@@ -276,11 +375,13 @@ impl Controller {
         &self,
         session: &Ticket,
         mut finals: mpsc::Receiver<Finalized>,
+        selection: &crate::config::preferences::ServiceSelection,
     ) -> Result<(), &'static str> {
-        let interpreter = MistralInterpreter;
+        let interpreter = MistralInterpreter::selected(selection)?;
         let mut sequence = 0;
         while let Some(Finalized { passage_id, text }) = finals.recv().await {
             if text.trim().is_empty() {
+                crate::diagnostics::event("STT : final vide ignoré, aucun appel LLM ordinaire");
                 continue;
             }
             let (ticket, intention, candidates) = {
@@ -317,7 +418,7 @@ impl Controller {
                 match core.commit_voice(&ticket, response) {
                     Ok(()) => {
                         if core.snapshot().message == before.message {
-                            core.message("Passage finalisé traité ; modifications acceptées par le cœur, écoute continue.");
+                            core.message("Passage finalisé traité ; écoute continue.");
                         }
                     }
                     Err(message) => core.message(message),
@@ -326,6 +427,7 @@ impl Controller {
                 core.measure("commit_us", commit_started.elapsed().as_micros() as u64, "");
                 (mode != "voice").then_some(mode == "paused")
             };
+            self.remember_saved_note();
             if terminal.is_some() {
                 // Core already invalidated; physical capture/cancellation must still stop.
                 self.finish_device(session);
@@ -339,8 +441,9 @@ impl Controller {
         &self,
         ticket: &Ticket,
         mut receiver: watch::Receiver<Option<String>>,
+        selection: &crate::config::preferences::ServiceSelection,
     ) -> Result<(), &'static str> {
-        let interpreter = MistralInterpreter;
+        let interpreter = MistralInterpreter::selected(selection)?;
         loop {
             receiver
                 .changed()
@@ -355,6 +458,12 @@ impl Controller {
             self.update(ticket, |c| c.measure("priority", 1, ""));
             let priority_started = Instant::now();
             let action = Interpreter::interpret_interruption(&interpreter, &text).await?;
+            crate::diagnostics::event(match action {
+                Interruption::None => "Priorité : aucune interruption demandée",
+                Interruption::Pause => "Priorité : pause demandée",
+                Interruption::Stop => "Priorité : arrêt demandé",
+                Interruption::Manual => "Priorité : manuel demandé",
+            });
             self.update(ticket, |c| {
                 c.measure(
                     "priority_ms",

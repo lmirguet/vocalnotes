@@ -1,7 +1,9 @@
 use serde_json::{Value, json};
 use vocalnotes_lib::{
     domain::note::Note,
-    ports::interpreter::{decode_intervention, response_format},
+    ports::interpreter::{
+        InterpretationContext, decode_intervention, response_format, response_format_for_context,
+    },
 };
 
 fn replace(id: &str, expected: &str, text: &str) -> Value {
@@ -24,6 +26,142 @@ fn reply(actions: Vec<Value>) -> String {
 fn apply(note: &mut Note, sequence: u64, actions: Vec<Value>) -> Result<(), &'static str> {
     let ticket = note.voice_ticket(sequence)?;
     note.commit_voice(&ticket, decode_intervention(&reply(actions))?)
+}
+
+#[test]
+fn empty_context_only_offers_insertion_on_the_exact_native_anchor() {
+    let mut note = Note::new(String::new());
+    let context = InterpretationContext {
+        blocks: note.candidates(),
+        save_available: false,
+    };
+    let format = response_format_for_context(&context);
+    let operations = format["json_schema"]["schema"]["properties"]["actions"]["items"]["anyOf"][0]
+        ["properties"]["operation"]["anyOf"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        operations.len(),
+        1,
+        "No replace/delete/move target exists in an empty note"
+    );
+    let insert = &operations[0];
+    assert_eq!(insert["properties"]["kind"]["enum"], json!(["insert"]));
+    let anchor_properties = &insert["properties"]["anchor"]["properties"];
+    let id = anchor_properties["block_id"]["enum"][0].as_str().unwrap();
+    let expected = anchor_properties["expected"]["enum"][0].as_str().unwrap();
+    assert_eq!(id, context.blocks[0].block_id);
+    assert_eq!(expected, "");
+    // The provider-visible native anchor must actually be executable in the core.
+    note.start_voice(false).unwrap();
+    apply(
+        &mut note,
+        1,
+        vec![json!({"type":"edit", "operation": {
+            "kind":"insert", "anchor":anchor(id, expected, "before"), "text":"Trois cahiers."
+        }})],
+    )
+    .unwrap();
+    assert_eq!(note.snapshot().source, "Trois cahiers.");
+    assert_eq!(note.snapshot().voice_applied, 1);
+}
+
+#[test]
+fn nonempty_context_keeps_all_operations_and_empty_opaque_only_context_is_not_an_empty_note() {
+    for source in ["bonjour", "```rs\nopaque\n```"] {
+        let note = Note::new(source.into());
+        let context = InterpretationContext {
+            blocks: note.candidates(),
+            save_available: false,
+        };
+        assert_eq!(response_format_for_context(&context), response_format());
+    }
+}
+
+#[test]
+fn voice_diagnostics_distinguish_outcomes_and_survive_stop_without_content() {
+    let mut note = Note::new("bonjour".into());
+    note.start_voice(false).unwrap();
+    let ticket = note.voice_ticket(1).unwrap();
+    note.commit_voice(
+        &ticket,
+        decode_intervention(
+            r#"{"status":"clarify","message":"Précision synthétique privée","actions":[]}"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    apply(&mut note, 2, vec![]).unwrap();
+    assert!(apply(&mut note, 3, vec![replace("b404", "bonjour", "soir")]).is_err());
+    apply(&mut note, 4, vec![replace("b0", "bonjour", "bonsoir")]).unwrap();
+    note.stop("Arrêt explicite");
+    let snapshot = serde_json::to_value(note.snapshot()).unwrap();
+    assert_eq!(snapshot["voiceApplied"], 1);
+    assert_eq!(snapshot["voiceClarifications"], 1);
+    assert_eq!(snapshot["voiceRejected"], 1);
+    assert_eq!(snapshot["voiceNoChange"], 1);
+    assert_eq!(
+        snapshot["lastVoiceResult"],
+        "Modification de la note appliquée."
+    );
+    assert_eq!(snapshot["source"], "bonsoir");
+    assert!(
+        !snapshot
+            .to_string()
+            .contains("Précision synthétique privée")
+    );
+    // Neither a stale response nor a duplicate is counted as new work.
+    assert!(
+        note.commit_voice(&ticket, decode_intervention(&reply(vec![])).unwrap())
+            .is_err()
+    );
+    assert_eq!(
+        serde_json::to_value(note.snapshot()).unwrap()["voiceNoChange"],
+        1
+    );
+    note.start_voice(false).unwrap();
+    let current = note.voice_ticket(1).unwrap();
+    note.commit_voice(&current, decode_intervention(&reply(vec![])).unwrap())
+        .unwrap();
+    assert!(
+        note.commit_voice(&current, decode_intervention(&reply(vec![])).unwrap())
+            .is_err()
+    );
+    assert_eq!(
+        serde_json::to_value(note.snapshot()).unwrap()["voiceNoChange"],
+        2
+    );
+    assert_eq!(
+        serde_json::to_value(note.snapshot()).unwrap()["voiceRejected"],
+        1
+    );
+}
+
+#[test]
+fn voice_diagnostics_keep_clarification_or_native_refusal_after_explicit_stop() {
+    let mut note = Note::new("bonjour".into());
+    note.start_voice(false).unwrap();
+    let ticket = note.voice_ticket(1).unwrap();
+    note.commit_voice(
+        &ticket,
+        decode_intervention(r#"{"status":"clarify","message":"Quelle précision ?","actions":[]}"#)
+            .unwrap(),
+    )
+    .unwrap();
+    note.stop("Arrêt explicite");
+    assert_eq!(
+        serde_json::to_value(note.snapshot()).unwrap()["lastVoiceResult"],
+        "Précision demandée ; aucune action appliquée."
+    );
+    note.start_voice(false).unwrap();
+    assert!(apply(&mut note, 1, vec![session("new")]).is_err());
+    let refusal = note.snapshot().message;
+    note.stop("Arrêt explicite");
+    assert_eq!(
+        serde_json::to_value(note.snapshot()).unwrap()["lastVoiceResult"],
+        refusal
+    );
+    assert_eq!(note.snapshot().source, "bonjour");
 }
 
 #[test]
@@ -401,4 +539,97 @@ fn typed_file_commands_not_yet_integrated_never_do_io_or_change_the_note() {
         assert_eq!(note.snapshot().note_id, before.note_id);
         assert_eq!(note.snapshot().mode, "voice");
     }
+}
+
+#[test]
+fn inconsistent_provider_status_is_rejected_with_service_error() {
+    for value in [
+        json!({"status":"resolved","message":"Résumé fourni par le service","actions":[]}),
+        json!({"status":"clarify","message":"","actions":[]}),
+        json!({"status":"clarify","message":"Quelle cible ?","actions":[replace("b0","a","b")]}),
+    ] {
+        assert_eq!(
+            decode_intervention(&value.to_string()).err(),
+            Some("Réponse du service incohérente avec le contrat : aucun effet.")
+        );
+    }
+    assert!(decode_intervention(&reply(vec![])).is_ok());
+    assert!(
+        decode_intervention(r#"{"status":"clarify","message":"Quelle cible ?","actions":[]}"#)
+            .is_ok()
+    );
+}
+
+#[test]
+fn wire_schema_separates_resolved_edits_from_clarification() {
+    for source in ["", "Première idée."] {
+        let note = Note::new(source.into());
+        let format = response_format_for_context(&InterpretationContext {
+            blocks: note.candidates(),
+            save_available: false,
+        });
+        let schema = &format["json_schema"]["schema"];
+        let alternatives = schema["anyOf"]
+            .as_array()
+            .expect("exclusive envelope alternatives");
+        assert_eq!(alternatives.len(), 2);
+        assert_eq!(
+            alternatives[0]["properties"]["status"]["enum"],
+            json!(["resolved"])
+        );
+        assert_eq!(
+            alternatives[0]["properties"]["message"]["enum"],
+            json!([""])
+        );
+        assert_eq!(
+            alternatives[1]["properties"]["status"]["enum"],
+            json!(["clarify"])
+        );
+        assert_eq!(alternatives[1]["properties"]["actions"]["maxItems"], 0);
+        assert_eq!(
+            alternatives[1]["properties"]["message"]["pattern"],
+            json!(r"\S")
+        );
+        assert_eq!(
+            alternatives[0]["properties"]["actions"],
+            schema["properties"]["actions"]
+        );
+        // Synthetic schema only, also checked offline with a full JSON Schema validator.
+        println!("ENVELOPE_SCHEMA {}", schema);
+    }
+}
+
+#[test]
+fn delete_then_replace_missing_target_keeps_cahiers_and_allows_later_insert() {
+    let original = "Acheter des cahiers.";
+    let mut note = Note::new(original.into());
+    note.start_voice(false).unwrap();
+    assert!(
+        apply(
+            &mut note,
+            1,
+            vec![
+                json!({"type":"edit","operation":{"kind":"delete",
+            "target":{"block_id":"b0","expected":"cahiers"}}}),
+                replace("b0", "cahiers", "cahiers et des stylos"),
+            ]
+        )
+        .is_err()
+    );
+    assert_eq!(note.snapshot().source, original);
+    assert_eq!(note.snapshot().revision, 0);
+    apply(
+        &mut note,
+        2,
+        vec![json!({"type":"edit","operation":{
+        "kind":"insert","anchor":anchor("b0", original, "after"),
+        "text":"\n\nPrévoir aussi des stylos."}})],
+    )
+    .unwrap();
+    assert_eq!(
+        note.snapshot().source,
+        "Acheter des cahiers.\n\nPrévoir aussi des stylos."
+    );
+    assert_eq!(note.snapshot().voice_rejected, 1);
+    assert_eq!(note.snapshot().voice_applied, 1);
 }

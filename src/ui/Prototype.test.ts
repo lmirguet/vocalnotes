@@ -23,6 +23,34 @@ async function setup(invoke: (command: string, args?: Record<string, unknown>) =
 }
 
 describe("prototype natif partiel", () => {
+  it("actualise un avertissement disque sans révision ni remplacement du texte", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const invoke = vi.fn(async () => ++calls === 1 ? initial : {
+      ...initial, storageMessage: "Modification externe détectée ; contenu conservé.",
+    });
+    const { root, app } = await setup(invoke);
+    try {
+      const editor = root.querySelector(".ProseMirror");
+      const content = editor?.textContent;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain("Modification externe détectée");
+      expect(root.querySelector(".ProseMirror")).toBe(editor);
+      expect(editor?.textContent).toBe(content);
+    } finally { app.destroy(); vi.useRealTimers(); }
+  });
+  it("conserve le bilan vocal après arrêt sans inventer de texte appliqué", async () => {
+    const { root, app } = await setup(vi.fn(async () => ({
+      ...initial, message: "Arrêt explicite ; passages en attente non intégrés.",
+      voiceApplied: 0, voiceClarifications: 2, voiceRejected: 1, voiceNoChange: 3,
+      lastVoiceResult: "Précision demandée ; aucune action appliquée.",
+    })));
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      "Bilan vocal : 0 modification(s), 2 clarification(s), 1 refus, 3 sans modification");
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      "Précision demandée ; aucune action appliquée.");
+    app.destroy();
+  });
   it("affiche menus WordPad, éditeur et bloc opaque sans activer de micro", async () => {
     const { root, invoke, app } = await setup();
     const nav = root.querySelector('nav[aria-label="Menus"]')!;
@@ -95,7 +123,7 @@ describe("prototype natif partiel", () => {
     expect(key(path, "ArrowRight")).toBe(true); // text caret remains native
     expect(key(path, "Tab")).toBe(true); // no trap or menuitem semantics
     expect(document.activeElement).toBe(path);
-    const outside = root.querySelector<HTMLInputElement>('input[type="password"]')!;
+    const outside = root.querySelector<HTMLInputElement>('[data-consent="voice"]')!;
     outside.focus();
     expect(triggers[0]!.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(outside);
@@ -122,6 +150,19 @@ describe("prototype natif partiel", () => {
       expect(getComputedStyle(panel).display).not.toBe("none");
       expect(getComputedStyle(panel).zIndex).toBe("10");
     } finally { style.remove(); app.destroy(); }
+  });
+
+  it("garde un conflit de sauvegarde visible après changement du message de session", async () => {
+    const { root, app } = await setup(vi.fn(async () => ({
+      ...initial, mode: "paused", dirty: true, message: "Pause — micro arrêté.",
+      storageMessage: "Conflit disque. Version locale : /tmp/local.md ; disque : /tmp/externe.md",
+    })));
+    const status = root.querySelector('[role="status"]')!;
+    expect(status.textContent).toContain("Pause");
+    expect(status.textContent).toContain("Conflit disque");
+    expect(status.textContent).toContain("/tmp/local.md");
+    expect(status.textContent).toContain("/tmp/externe.md");
+    app.destroy();
   });
 
   it("champ masqué vidé avant attente IPC, aucune valeur renvoyée au store", async () => {

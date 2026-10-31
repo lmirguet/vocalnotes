@@ -4,9 +4,10 @@ pub use crate::ports::interpreter::{Action, Intervention};
 use crate::ports::interpreter::{
     Anchor, Candidate, Edge, EditOperation, SessionCommand, Status, Target,
 };
+use crate::storage::markdown_file::{MarkdownFile, SaveError, SaveOutcome};
 use pulldown_cmark::{Event, Options, Parser, Tag};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::Write, path::Path};
+use std::{collections::HashMap, path::Path};
 
 const MAX_SOURCE: usize = 1_048_576;
 const MAX_TRANSACTIONS: usize = 256;
@@ -43,7 +44,16 @@ pub struct Snapshot {
     pub last_llm_ms: Option<u64>,
     pub last_priority_ms: Option<u64>,
     pub last_commit_us: Option<u64>,
+    pub voice_applied: u64,
+    pub voice_clarifications: u64,
+    pub voice_rejected: u64,
+    pub voice_no_change: u64,
+    pub last_voice_result: &'static str,
+    pub transcript_enabled: bool,
+    pub transcript_provisional: String,
+    pub transcript_final: String,
     pub close_pending: bool,
+    pub storage_message: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -81,6 +91,8 @@ pub struct Note {
     intention: String,
     session: Session,
     destination: Option<std::path::PathBuf>,
+    storage: Option<MarkdownFile>,
+    storage_conflict: bool,
 }
 
 pub fn blocks(source: &str) -> Vec<Block> {
@@ -254,12 +266,23 @@ impl Note {
                 last_llm_ms: None,
                 last_priority_ms: None,
                 last_commit_us: None,
+                voice_applied: 0,
+                voice_clarifications: 0,
+                voice_rejected: 0,
+                voice_no_change: 0,
+                last_voice_result: "Aucun résultat vocal traité.",
+                transcript_enabled: false,
+                transcript_provisional: String::new(),
+                transcript_final: String::new(),
                 close_pending: false,
+                storage_message: String::new(),
             },
             confirmed: HashMap::new(),
             intention: String::new(),
             session: Session::default(),
             destination: None,
+            storage: None,
+            storage_conflict: false,
         }
     }
 
@@ -272,6 +295,9 @@ impl Note {
         self.state.blocks = blocks(&self.state.source);
         self.state.revision += 1;
         self.state.dirty = true;
+        if self.storage.is_some() {
+            let _ = self.save_current();
+        }
     }
 
     pub fn manual(&mut self, proposal: Proposal) -> Ack {
@@ -327,6 +353,43 @@ impl Note {
         Ticket::current(&self.state)
     }
 
+    pub fn set_transcript_enabled(&mut self, enabled: bool) -> Result<(), &'static str> {
+        if enabled && self.state.mode != "voice" {
+            return Err("Démarrer le vocal avant d’activer la transcription temporaire.");
+        }
+        self.clear_transcript();
+        self.state.transcript_enabled = enabled;
+        Ok(())
+    }
+
+    fn clear_transcript(&mut self) {
+        self.state.transcript_enabled = false;
+        self.state.transcript_provisional.clear();
+        self.state.transcript_final.clear();
+    }
+
+    pub fn transcript_start_passage(&mut self) {
+        self.state.transcript_provisional.clear();
+    }
+
+    pub fn transcript_delta(&mut self, text: &str) {
+        if self.state.transcript_enabled
+            && self.state.mode == "voice"
+            && self.state.transcript_provisional.len() + text.len() <= 65_536
+        {
+            self.state.transcript_provisional.push_str(text);
+        }
+    }
+
+    pub fn transcript_done(&mut self, text: &str) {
+        if self.state.transcript_enabled && self.state.mode == "voice" && text.len() <= 65_536 {
+            self.state.transcript_provisional.clear();
+            if !text.trim().is_empty() {
+                self.state.transcript_final = text.into();
+            }
+        }
+    }
+
     pub fn start_voice(&mut self, resume: bool) -> Result<(), &'static str> {
         if self.state.close_pending
             || self.state.mode == "voice"
@@ -334,6 +397,7 @@ impl Note {
         {
             return Err("État incompatible avec le démarrage explicite.");
         }
+        self.clear_transcript();
         if !resume {
             self.intention.clear();
             self.state.session_id += 1;
@@ -348,6 +412,7 @@ impl Note {
     }
 
     pub fn pause(&mut self) {
+        self.clear_transcript();
         self.state.generation += 1;
         self.state.manual_period += 1;
         self.state.mode = "paused";
@@ -396,17 +461,51 @@ impl Note {
         ticket: &Ticket,
         response: Intervention,
     ) -> Result<(), &'static str> {
-        let result = self
-            .session
-            .consume(&self.state, ticket)
-            .and_then(|()| self.intervene(ticket, response));
+        // Count only fresh, authorized results: duplicates and invalidated sessions
+        // must not overwrite the diagnostic of the current session.
+        if let Err(reason) = self.session.consume(&self.state, ticket) {
+            crate::diagnostics::event(reason);
+            self.state.message = reason.into();
+            return Err(reason);
+        }
+        let clarification = response.status == Status::Clarify;
+        let revision = self.state.revision;
+        let result = self.intervene(ticket, response);
+        self.state.last_voice_result = match result {
+            Ok(()) if clarification => {
+                self.state.voice_clarifications += 1;
+                "Précision demandée ; aucune action appliquée."
+            }
+            Ok(()) if self.state.revision != revision => {
+                self.state.voice_applied += 1;
+                "Modification de la note appliquée."
+            }
+            Ok(()) => {
+                self.state.voice_no_change += 1;
+                "Passage traité sans modification de la note."
+            }
+            Err(reason) => {
+                self.state.voice_rejected += 1;
+                reason
+            }
+        };
+        crate::diagnostics::numbers(
+            self.state.last_voice_result,
+            &[
+                ("applied", self.state.voice_applied),
+                ("clarifications", self.state.voice_clarifications),
+                ("rejected", self.state.voice_rejected),
+                ("no_change", self.state.voice_no_change),
+            ],
+        );
         if let Err(reason) = result {
             self.state.message = reason.into();
         }
         result
     }
 
-    pub fn message(&mut self, message: impl Into<String>) {
+    pub fn message(&mut self, message: &'static str) {
+        crate::diagnostics::event(message);
         self.state.message = message.into();
     }
 
@@ -431,6 +530,7 @@ impl Note {
     }
 
     pub fn stop(&mut self, message: &str) {
+        self.clear_transcript();
         self.state.generation += 1;
         self.state.manual_period += 1;
         self.state.mode = "manual";
@@ -451,6 +551,9 @@ impl Note {
         self.state.dirty = false;
         self.state.blocks = blocks(&self.state.source);
         self.destination = None;
+        self.storage = None;
+        self.storage_conflict = false;
+        self.state.storage_message.clear();
         self.state.close_pending = false;
     }
 
@@ -459,23 +562,12 @@ impl Note {
             return Err("Sauvegarder la note modifiée avant de changer de note.");
         }
         self.invalidate_for_open();
-        validate_path(path)?;
-        let metadata = std::fs::symlink_metadata(path).map_err(|_| "Note inaccessible.")?;
-        if !metadata.is_file()
-            || metadata.file_type().is_symlink()
-            || metadata.len() > MAX_SOURCE as u64
-        {
-            return Err("Note ordinaire UTF-8 de moins de 1 Mio requise.");
-        }
-        let source = std::fs::read_to_string(path).map_err(|_| "Lecture UTF-8 impossible.")?;
-        if source.len() > MAX_SOURCE {
-            return Err("La note a grandi pendant l'ouverture ; lecture refusée.");
-        }
+        let (storage, source) = MarkdownFile::open(path).map_err(|e| e.message)?;
         self.loaded(source);
         self.destination = Some(path.to_owned());
+        self.storage = Some(storage);
         self.state.message =
-            "Note ouverte. Sauvegarde uniquement en nouvelle copie exclusive dans ce prototype."
-                .into();
+            "Note ouverte ; autosauvegarde contrôlée des modifications acceptées.".into();
         Ok(())
     }
 
@@ -490,24 +582,116 @@ impl Note {
     }
 
     pub fn save_copy(&mut self, path: &Path) -> Result<(), &'static str> {
-        validate_path(path)?;
-        // Safe prototype fallback: no replacement of existing files on either OS.
-        // No cache, transcript, credentials or context are ever written here.
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(
-                |_| "Création exclusive impossible : choisir un nouveau fichier Markdown local.",
-            )?;
-        file.write_all(self.state.source.as_bytes())
-            .and_then(|_| file.sync_all())
-            .map_err(|_| "Écriture incomplète : note conservée en mémoire, vérifier la copie.")?;
+        let storage = match MarkdownFile::create_copy(path, &self.state.source) {
+            Ok(file) => file,
+            Err(error) => {
+                let message = error.message;
+                self.storage_error(error);
+                return Err(message);
+            }
+        };
+        self.storage = Some(storage);
+        self.storage_conflict = false;
+        self.state.storage_message.clear();
         self.state.dirty = false;
         self.destination = Some(path.to_owned());
         self.state.message =
             "Nouvelle copie Markdown enregistrée ; aucun fichier existant remplacé.".into();
         Ok(())
+    }
+
+    fn storage_error(&mut self, error: SaveError) {
+        crate::diagnostics::event("Sauvegarde : erreur ; note conservée en mémoire.");
+        self.state.message = error.message.into();
+        for path in error.recovery_paths {
+            self.state.message.push_str("\nNote à vérifier : ");
+            self.state.message.push_str(&path.to_string_lossy());
+        }
+        self.state.storage_message = self.state.message.clone();
+    }
+
+    pub fn refresh_disk_status(&mut self) {
+        if self.storage_conflict {
+            return;
+        }
+        if let Some(storage) = &self.storage {
+            match storage.changed_on_disk() {
+                Ok(true) => {
+                    let warning = "Modification externe détectée ; la note en mémoire est conservée. Tout enregistrement contrôlera les deux versions.";
+                    if self.state.storage_message != warning {
+                        crate::diagnostics::event("Sauvegarde : modification externe détectée ; note en mémoire conservée.");
+                    }
+                    self.state.storage_message = warning.into();
+                },
+                Err(_) => self.state.storage_message = "Fichier disque inaccessible ; note en mémoire conservée, choisir une destination disponible.".into(),
+                Ok(false) => {}
+            }
+        }
+    }
+
+    pub fn save_current(&mut self) -> Result<(), &'static str> {
+        if self.storage_conflict {
+            return Err(
+                "Conflit disque : enregistrer une nouvelle copie avant de continuer la sauvegarde.",
+            );
+        }
+        let storage = self
+            .storage
+            .as_mut()
+            .ok_or("Choisir une destination Markdown locale avant la sauvegarde ; aucun effet.")?;
+        if !self.state.dirty {
+            return Ok(());
+        }
+        match storage.save(&self.state.source) {
+            Ok(SaveOutcome::Saved) => {
+                self.state.dirty = false;
+                self.state.storage_message.clear();
+                self.state.message =
+                    "Note enregistrée automatiquement après contrôle de la version disque.".into();
+                Ok(())
+            }
+            Ok(SaveOutcome::Conflict { local, external }) => {
+                crate::diagnostics::event(
+                    "Sauvegarde : conflit disque ; versions préservées, nouvelle destination requise.",
+                );
+                self.storage_conflict = true;
+                self.state.message = format!(
+                    "Conflit disque : note conservée en mémoire. Enregistrer une nouvelle copie.\nVersion locale : {}\nVersion disque préservée : {}",
+                    local.display(),
+                    external.display()
+                );
+                self.state.storage_message = self.state.message.clone();
+                Err(
+                    "Conflit disque : les versions sont préservées ; choisir une nouvelle destination.",
+                )
+            }
+            Ok(SaveOutcome::Copy { path }) => {
+                // A fallback is an explicit destination change, never a silent overwrite.
+                let (storage, _) = MarkdownFile::open(&path).map_err(|e| e.message)?;
+                self.destination = Some(path.clone());
+                self.storage = Some(storage);
+                self.state.dirty = false;
+                self.state.message = format!(
+                    "Remplacement indisponible ; note sauvegardée dans une nouvelle copie : {}",
+                    path.display()
+                );
+                self.state.storage_message = self.state.message.clone();
+                Ok(())
+            }
+            Err(error) => {
+                let message = error.message;
+                self.storage_error(error);
+                Err(message)
+            }
+        }
+    }
+
+    pub fn saved_destination(&self) -> Option<std::path::PathBuf> {
+        if self.state.dirty {
+            None
+        } else {
+            self.destination.clone()
+        }
     }
 
     pub fn can_save(&self) -> bool {
@@ -540,21 +724,15 @@ impl Note {
     pub fn request_close(&mut self) -> bool {
         self.stop("Arrêt et invalidation avant fermeture.");
         if self.state.dirty {
-            // Until conditional atomic replacement is available, a new exclusive sibling
-            // is safer than overwriting the opened/saved note. Failure keeps it accessible.
-            if let Some(destination) = self.destination.clone() {
-                let unique = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos();
-                let path = destination.with_file_name(format!("vocalnotes-fermeture-{unique}.md"));
-                match self.save_copy(&path) {
-                    Ok(()) => return true,
-                    Err(_) => {
-                        self.state.message = "Fermeture suspendue : sauvegarde exclusive échouée ; note conservée, choisir une autre destination.".into();
-                        return false;
-                    }
+            if self.storage.is_some() {
+                if self.save_current().is_ok() {
+                    return true;
                 }
+                // Keep the detailed conflict/recovery paths available in the window.
+                self.state
+                    .message
+                    .insert_str(0, "Fermeture suspendue ; micro arrêté. ");
+                return false;
             }
             self.state.message =
                 "Fermeture suspendue : enregistrer une nouvelle copie de la note avant de fermer."
@@ -624,7 +802,7 @@ impl Note {
         }
         self.intention = intention;
         match terminal {
-            Some(SessionCommand::Save {}) => self.save_selected_copy()?,
+            Some(SessionCommand::Save {}) => self.save_current()?,
             Some(SessionCommand::Pause {}) => self.pause(),
             Some(_) => self.stop("Interruption demandée ; passages en attente non intégrés, aucune reprise automatique."),
             None => {}
@@ -779,11 +957,4 @@ impl WorkingTargets {
         *source = next;
         Ok(())
     }
-}
-
-fn validate_path(path: &Path) -> Result<(), &'static str> {
-    if !path.is_absolute() || path.extension().and_then(|s| s.to_str()) != Some("md") {
-        return Err("Chemin absolu vers un fichier .md requis.");
-    }
-    Ok(())
 }

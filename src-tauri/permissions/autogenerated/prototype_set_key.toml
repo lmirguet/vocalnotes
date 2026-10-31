@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prototype-set-key"
+description = "Enables the prototype_set_key command without any pre-configured scope."
+commands.allow = ["prototype_set_key"]
+
+[[permission]]
+identifier = "deny-prototype-set-key"
+description = "Denies the prototype_set_key command without any pre-configured scope."
+commands.deny = ["prototype_set_key"]

@@ -1,11 +1,261 @@
+adapters_B08:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-voice-recipe-pending
+  scope: [T020, T021, T022]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T020, T021, T022]
+  tests: {rust_lib: 12, rust_shared: 107, provider_contracts: 10, javascript: 48, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, rust_format: PASS}
+  tdd: "Module adapters absent, puis réémission possible après annulation d'append ; échecs constatés avant correction."
+  report: docs/validation/adapters-gnome.md
+  implementation: "Code partagé avec transports simulés, façades sans duplication, annulation d'envoi terminale, saturation capture testée sans périphérique."
+  main_binary_rebuilt: false
+  main_binary_sha256: b549a055da0e2668840ea43f93f92806fe2ed216f52e8fafe2c08dcfad10f6b9
+  existing_application_restarted: false
+  provider_microphone_user_keyring_calls: false
+  synthetic_unavailable_keyring_child_test: true
+  system_installations: false
+  new_dependencies: false
+  next_tasks: [T023, T024, T025]
+  historical_precedence: "Ce bloc et les compteurs globaux prévalent sur les lots historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+preferences_B07:
+  date: "2026-10-31"
+  status: implemented-native-preferences-ui-scenarios-passed
+  scope: [T017, T018, T019]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T017, T018, T019]
+  tests: {rust_lib: 10, rust_shared: 97, javascript: 48, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, rust_format: PASS}
+  native_keyring: PASS-isolated-synthetic-create-replace-read-delete-cleaned-up
+  application_credential_accessed: false
+  unavailable_keyring: PASS-child-invalid-dbus-no-fallback
+  preferences: "Modèles séparés, reprise figée, nouveau démarrage explicite, dernière note sauvée ; aucune clé ni contenu."
+  permissions: "Deux commandes de préférences ajoutées à la liste applicative locale (dix au total)."
+  report: docs/validation/preferences-gnome.md
+  main_binary_rebuilt: true
+  main_binary_sha256: b549a055da0e2668840ea43f93f92806fe2ed216f52e8fafe2c08dcfad10f6b9
+  application: open-after-user-validated-preferences-recipe
+  provider_microphone_calls: false
+  system_installations: false
+  new_dependencies: false
+  next_tasks: [T020, T021, T022]
+  historical_precedence: "Ce bloc et les compteurs globaux prévalent sur les lots historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+  native_preferences_recipe: {panel: PASS-user, separate_models: PASS-user, key_presence: PASS-user, invalid_model_rejected: PASS-user, save: PASS-user-disk, restart_persistence: PASS-user-disk, usual_models_restored: PASS-user-disk}
+  native_recipe_limits: "Pas de nouvel essai vocal/fournisseur ; gel des modèles vérifié par tests automatisés."
+ipc_ui_B06:
+  date: "2026-10-31"
+  status: implemented-native-manual-scenarios-passed
+  scope: [T014, T015, T016]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T014, T015, T016]
+  tests: {rust_lib: 10, rust_shared: 86, javascript: 45, failed: 0}
+  checks: {frontend_typecheck_build: PASS, rust_all_targets: PASS, embedded_rust_check: PASS, rust_format: PASS}
+  tdd: "Modules/méthodes absents puis champs supplémentaires acceptés sur variante unitaire ; correction avant validation finale."
+  report: docs/validation/ipc-ui-gnome.md
+  permissions: "Huit commandes applicatives explicites, origine locale et fenêtre main uniquement."
+  rendering: "HTML opaque/littéral, liens sans href, images sans src, collage texte brut, aucune cible de traitement inventée."
+  main_binary_rebuilt: true
+  main_binary_sha256: 42c015d651a532aa116a6eba4451a5bcfcdc9df3bef3c81277a61e77200fd904
+  provider_microphone_keyring_calls: false
+  system_installations: false
+  next_tasks: [T017, T018, T019]
+  historical_precedence: "Ce bloc et les champs de progression globaux prévalent sur les états historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+  native_recipe: {manual_edit: PASS-user, safe_rendering: PASS-user, autosave: PASS-disk, external_warning: PASS-user-console, conflict_copies: PASS-user-disk, resolution: PASS-user-disk, close: PASS-user-process-absence}
+  application: closed-by-user-process-absence-verified
+  native_recipe_limits: "Scénarios manuels exercés seulement ; ACL/navigation exhaustive, vocal nouveau, fermeture en erreur non recettés."
+storage_B05:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-recipe-pending
+  scope: [T011, T012, T013]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T011, T012, T013]
+  tests: {rust_lib: 10, rust_shared: 80, javascript: 34, failed: 0}
+  checks: {rust_all_targets: PASS, rust_format: PASS, frontend_typecheck_build: PASS}
+  report: docs/validation/storage-gnome.md
+  behavior: "Autosave contrôlé, inotify indicatif, copies de conflit, fermeture après arrêt/invalidation et sauvegarde."
+  disk_failure: "Écriture partielle réelle avec RLIMIT_FSIZE ; volume physiquement plein non exercé."
+  process_interruption: "Sortie du sous-processus avant/après échange, deux versions récupérables."
+  main_binary_rebuilt: false
+  main_binary_sha256: 5b441b0be92924b6516b77574b066b116488c475b29e591e7401b9a39732f321
+  provider_microphone_keyring_calls: false
+  system_installations: false
+  dependencies: "sha2/libc directs, versions déjà verrouillées ; aucun téléchargement."
+  next_tasks: [T014, T015, T016]
+  historical_precedence: "Ce bloc décrit le lot actuel ; les états B01–B04 et B03-OFFLINE ci-dessous sont historiques."
+  hooks: {before: absent, after: absent}
 batch_id: B03-OFFLINE
-latest_attempt: B03-OFFLINE
-historical_sections: "Les champs racines actuels et latest_batch B03-OFFLINE font autorité. Toutes les sections B01/B02 sont historiques, y compris attentes de relink/PID/consentement et T010 partielle. Contexte de reprise : diagnostic STT Windows HTTP1.0/307 sous TLS vérifié, filtrage corporate probable, aucune redirection suivie ; pas de nouvelle recette."
+latest_attempt: B04-GNOME
+gnome_validation_B04:
+  date: "2026-10-31"
+  scope: [T006, T007]
+  status: completed-GNOME-prototype-scoped
+  authority: "Cette section décrit la reprise actuelle GNOME ; latest_batch B03 et les sections précédentes restent des résultats historiques."
+  platform: "Fedora 44, GNOME 50.6, Wayland"
+  windows_in_scope: false
+  completed_tasks: [T006, T007]
+  checks: {rust_tests: 74, javascript_tests: 32, rust_format: PASS, frontend_typecheck_build: PASS, native_embedded_build: PASS, lifecycle_initialization: PASS}
+  rpm: "Généré ; installation interrompue, absence du paquet confirmée par rpm -q. Poursuite depuis binaire sans installation système supplémentaire."
+  previous_launch: {pid: 1152666, tool_session: 49945, status: user-closed-process-absence-verified}
+  launch: {tool_session: 26421, mode: direct-native-binary-no-vite-fix-D6}
+  binary_sha256: 5b441b0be92924b6516b77574b066b116488c475b29e591e7401b9a39732f321
+  audio_default: nx_remapped_out-NoMachine
+  microphone_opened: true
+  provider_attempts_user_report: {stt: 17, llm: 6, priority: 12, audio_ms: 40860}
+  first_attempt_voice_result: FAIL-no-text
+  voice_result: PASS-D6-multiple-passages
+  diagnostic_fix: {rust_tests: 66, javascript_tests: 32, frontend_build: PASS, loaded_in_gui: true}
+  agent_provider_calls_during_fix: 0
+  application_keyring_accessed: true
+  real_lock_suspend_recipe: {lock: PASS, suspend: excluded-by-user, monitor_connection_loss: PASS-native-probe}
+  keyring_recipe: PASS-user-set-presence-and-isolated-native-backend-roundtrip
+  voice_consent: user-performed-explicit-informed-UI-starts
+  selected_microphone: NoMachine-user-confirmed
+  manual_recipe: PASS-user-confirmed
+  next_step: "Validation locale terminée ; prochain lot de développement T011 hors reprise actuelle."
+  D2_console_audio:
+    rust_tests: {lib: 10, shared: 57, failed: 0}
+    format_diff_checks: PASS
+    requested_by_user: true
+    reason: "Essai D1 non concluant, audio reçu incertain et messages UI volatils."
+    contents: "Messages natifs statiques et métadonnées numériques ; aucun secret/audio/transcription/note."
+    meter: "Une fenêtre par seconde hors callback : samples, RMS, peak, PCM peak, frames et VAD."
+    loaded_in_gui: true
+    build_native: PASS
+    startup_console_confirmed: true
+    tool_session: 47020
+    previous_instance: "PID1169784 arrêté par SIGTERM à la demande explicite de l’utilisateur ; chemin vérifié, exit143, aucun SIGKILL."
+    provider_calls_by_agent: 0
+  D2_runtime_observed:
+    audio_input: "44100 Hz, 2 canaux, signal non silencieux et VAD pendant parole"
+    stt: {final_nonempty_bytes: 73}
+    llm: {http_status: 200, actions: 1}
+    commit: "Texte attendu absent ; aucun effet"
+    outcome: {applied: 0, clarifications: 0, rejected: 1, no_change: 0}
+    microphone_stop_confirmed: true
+  D3_fix:
+    rust_tests: {lib: 10, shared: 59, failed: 0}
+    format_diff_checks: PASS
+    scope: "Note vide : insert seul, ancre native exacte ; prompt contenu nouveau distinct du texte cible."
+    native_guards_relaxed: false
+    loaded_in_gui: true
+    build_native: PASS
+    tool_session: 45903
+    D2_close: "Utilisateur, absence de processus vérifiée, ancienne session47020 exit0."
+  D3_runtime:
+    user_result: PASS-text-appeared-correctly
+    stt_final_bytes: 45
+    llm_http_status: 200
+    operation: insert
+    outcome: {applied: 1, clarifications: 0, rejected: 0, no_change: 0}
+    explicit_stop_and_microphone_closed: true
+    correction_and_pause:
+      user_result: PASS
+      stt_final_bytes: 42
+      operation: replace
+      cumulative_outcome: {applied: 2, clarifications: 0, rejected: 0, no_change: 0}
+      pause_command_timestamp_ms: 1793442149392
+      microphone_closed_timestamp_ms: 1793442149394
+      command_origin_in_console: not-distinguished
+    background_recipe:
+      user_result: FAIL-replaced-existing-text-instead-of-adding
+      stt_final_bytes: 39
+      operation: replace
+      cumulative_outcome: {applied: 3, clarifications: 0, rejected: 0, no_change: 0}
+    D4_fix: {kind: preserve-existing-content-prompt, loaded_in_gui: true, tool_session: 5444, native_build: PASS, rust_tests_passed: 69, runtime_verified: false}
+    D4_user_feedback:
+      correction: PASS-user-confirmed
+      additional_idea: merged-with-existing-idea-user-reported
+      both_objects_retained: user-reported
+      nuance_fidelity: not-certified
+      background_window_change: not-explicitly-confirmed
+      cumulative_outcome: {applied: 5, clarifications: 0, rejected: 0, no_change: 0}
+      explicit_stop_and_microphone_closed: true
+      exact_mapping_of_operations_to_user_steps: unavailable
+    D4_background_reservation_recipe:
+      user_result: PASS
+      scope: single-background-scenario-with-reservation
+      content_inspected_by_agent: false
+      cumulative_outcome: {applied: 7, clarifications: 0, rejected: 0, no_change: 0}
+      empty_stt_finals_observed: true
+      last_pause_microphone_closed: true
+      application_exit_code: 0
+    D4_GNOME_lock:
+      user_result: PASS-manual-mode-after-unlock
+      tool_session: 4710
+      os_interruption_timestamp_ms: 1793442895112
+      native_microphone_closed_timestamp_ms: 1793442895115
+      automatic_restart_observed: false
+      scope: lock-unlock-only
+      suspend_tested: false
+      subscription_loss_tested: false
+    suspend_scope_decision:
+      status: excluded-from-local-recipe-by-user
+      reason: cannot-test-on-this-computer
+      tested: false
+      blocks_local_progress: false
+    multiple_passages_recipe:
+      user_result: FAIL-provider-response-rejected
+      observed_errors: [strict-response-contract, envelope-invariants]
+      exact_provider_violation: unknown-with-D4-logs
+    D5_fix:
+      kind: service-error-wording-numeric-diagnostics-and-envelope-prompt
+      offline_tests: {lib: 10, shared: 60, failed: 0}
+      native_build: PASS
+      tool_session: 56340
+      loaded_in_gui: true
+      runtime_verified: false
+      validation_relaxed: false
+    D5_runtime:
+      first_passage: PASS-insert-applied
+      second_passage: FAIL-provider-envelope
+      refused_envelope: {actions: 2, message_bytes: 0, status_clarify: true}
+      microphone_closed: true
+    D6_fix:
+      kind: mutually-exclusive-schema-envelope-alternatives
+      offline_tests: {lib: 10, shared: 61, failed: 0}
+      independent_json_schema_cases: {passed: 18, failed: 0}
+      native_build: PASS
+      tool_session: 26421
+      loaded_in_gui: true
+      runtime_verified: true
+      native_validation_relaxed: false
+    D6_runtime:
+      user_result: PASS-multiple-passages
+      schema_accepted_by_provider: true
+      cumulative_outcome: {applied: 5, clarifications: 0, rejected: 0, no_change: 0}
+      contract_errors_observed: false
+      pause_timestamp_ms: 1793443605599
+      native_microphone_closed_timestamp_ms: 1793443605602
+      application_state: open-paused
+      scope: single-bounded-multiple-passages-recipe
+    next_recipe: none-local-prototype-validation-complete
+    T006_T007_complete: true
+    completion_scope: GNOME-Wayland-prototype-only
+    excluded: [Windows, suspend-on-this-host, package-installation-certification]
+  native_completion_checks:
+    rust_tests: {lib: 10, shared_including_audio: 64, failed: 0}
+    javascript_tests: {passed: 32, failed: 0}
+    frontend_typecheck_build: PASS
+    files_real_permissions_exclusive_utf8_opaque: PASS
+    real_partial_write_size_limit: PASS-note-retained
+    keyring_real_isolated_create_replace_delete: PASS-cleaned-up
+    keyring_unavailable_child_bus: PASS
+    controller_unavailable_child_bus: PASS-manual-zero-provider-audio
+    real_GNOME_monitor_connection_loss: PASS-isolated-relay
+    visual_opaque_file_recipe: PASS-user-and-byte-comparison
+    main_binary_rebuilt_during_checks: false
+    report: docs/validation/prototype-gnome-final.md
+  report: docs/validation/prototype-gnome-final.md
+  hooks: "extensions.yml absent ; before/after skipped"
+historical_sections: "adapters_B08, preferences_B07, ipc_ui_B06, storage_B05 et les champs racines scope/completed_tasks font autorité. latest_batch B03-OFFLINE est historique. Toutes les sections B01/B02 sont historiques, y compris attentes de relink/PID/consentement et T010 partielle. Contexte de reprise : diagnostic STT Windows HTTP1.0/307 sous TLS vérifié, filtrage corporate probable, aucune redirection suivie ; pas de nouvelle recette."
 status: partial
 date: "2026-10-31"
-scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010]
-completed_tasks: [T001, T002, T003, T004, T005, T008, T009, T010]
-partial_tasks: [T006]
+scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022]
+completed_tasks: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022]
+partial_tasks: []
 latest_batch:
   batch_id: B03-OFFLINE
   status: completed-bounded-unit
@@ -450,7 +700,7 @@ ui_menu_correction:
   protocol_violation: false
   hooks: {before: "SKIPPED absent", after: "SKIPPED absent au contrôle final"}
   next_action: "Obtenir confirmation sauvegarde/fermeture propre, vérifier PID absent, arrêter windows-ui si nécessaire, build/link MSVC et relancer natif ; puis recette UI sans micro/clé."
-blocked_tasks:
+historical_blocked_tasks_B02:
   - task_id: T006
     reason: "Tranche compilée/testée Linux et MSVC Windows, fenêtre Windows lancée et WTS initialisé ; micro/WSS/LLM/keyring/rotation/pause/cycle OS non recettés. GNOME différée."
     required_task_ids: []

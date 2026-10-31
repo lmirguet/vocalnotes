@@ -134,7 +134,16 @@ impl Intervention {
                 && (!self.actions.is_empty() || self.message.trim().is_empty()))
             || (self.status == Status::Resolved && !self.message.is_empty())
         {
-            return Err("Intervention incohérente : aucun effet.");
+            crate::diagnostics::numbers(
+                "LLM : enveloppe refusée (métadonnées uniquement)",
+                &[
+                    ("actions", self.actions.len() as u64),
+                    ("message_bytes", self.message.len() as u64),
+                    ("status_clarify", u64::from(self.status == Status::Clarify)),
+                    ("message_blank", u64::from(self.message.trim().is_empty())),
+                ],
+            );
+            return Err("Réponse du service incohérente avec le contrat : aucun effet.");
         }
         for (index, action) in self.actions.iter().enumerate() {
             let invalid = match action {
@@ -232,21 +241,71 @@ pub fn response_format() -> Value {
             "command":{"anyOf":[simple_command,path_command]}}),
         json!(["type", "command"]),
     );
-    json!({"type":"json_schema","json_schema":{"name":"intervention","strict":true,"schema":
+    let mut format = json!({"type":"json_schema","json_schema":{"name":"intervention","strict":true,"schema":
         object(json!({
             "status":{"type":"string","enum":["resolved","clarify"]},
             "message":string(4096),
             "actions":{"type":"array","maxItems":32,"items":{"anyOf":[edit,intent,session]}}
         }), json!(["status","message","actions"]))
-    }})
+    }});
+    constrain_envelope(&mut format);
+    format
+}
+
+/// Match the provider-visible envelope to the native status/message/actions guard.
+/// Keep root object properties for providers expecting an object at the root.
+fn constrain_envelope(format: &mut Value) {
+    let schema = &mut format["json_schema"]["schema"];
+    let mut base = schema.clone();
+    base.as_object_mut().unwrap().remove("anyOf");
+    let mut resolved = base.clone();
+    resolved["properties"]["status"]["enum"] = json!(["resolved"]);
+    resolved["properties"]["message"]["enum"] = json!([""]);
+    let mut clarify = base;
+    clarify["properties"]["status"]["enum"] = json!(["clarify"]);
+    clarify["properties"]["message"]["minLength"] = json!(1);
+    clarify["properties"]["message"]["pattern"] = json!(r"\S");
+    clarify["properties"]["actions"]["maxItems"] = json!(0);
+    schema["anyOf"] = json!([resolved, clarify]);
+}
+
+pub fn response_format_for_context(context: &InterpretationContext) -> Value {
+    let mut format = response_format();
+    // An empty native anchor permits insertion, not targeting text from the dictation
+    // as if it were already in the note. Keep all native validation at commit.
+    if context.blocks.len() == 1 && context.blocks[0].source.is_empty() {
+        let operation = &mut format["json_schema"]["schema"]["properties"]["actions"]["items"]["anyOf"]
+            [0]["properties"]["operation"];
+        let mut insert = operation["anyOf"][0].clone();
+        let anchor = &mut insert["properties"]["anchor"]["properties"];
+        anchor["block_id"]["enum"] = json!([context.blocks[0].block_id]);
+        anchor["expected"]["enum"] = json!([""]);
+        operation["anyOf"] = json!([insert]);
+        // Rebuild alternatives after specializing the native empty-note anchor.
+        constrain_envelope(&mut format);
+    }
+    format
 }
 
 pub fn decode_intervention(text: &str) -> Result<Intervention, &'static str> {
     if text.len() > MAX_REPLY {
         return Err("Réponse LLM trop volumineuse.");
     }
-    let result: Intervention =
-        serde_json::from_str(text).map_err(|_| "Réponse LLM hors contrat strict.")?;
+    let result: Intervention = serde_json::from_str(text).map_err(|error| {
+        // Never print serde's error text: it can quote provider/user content.
+        crate::diagnostics::numbers(
+            "LLM : réponse hors contrat (métadonnées uniquement)",
+            &[
+                ("response_bytes", text.len() as u64),
+                ("json_syntax", u64::from(error.is_syntax())),
+                ("json_data", u64::from(error.is_data())),
+                ("json_eof", u64::from(error.is_eof())),
+                ("line", error.line() as u64),
+                ("column", error.column() as u64),
+            ],
+        );
+        "Réponse LLM hors contrat strict."
+    })?;
     result.validate()?;
     Ok(result)
 }

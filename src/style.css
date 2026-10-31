@@ -65,3 +65,14 @@ button, input { font: inherit; }
 .ProseMirror { min-height: 20rem; background: white; color: #111; border: 1px solid #666; padding: 1.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 [data-opaque] { border: 1px dashed #666; background: #eee; padding: .7rem; white-space: pre-wrap; }
 [role="status"] { border-inline-start: .25rem solid #555; padding-inline-start: .5rem; }
+
+[data-storage-warning] {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: .6rem;
+  margin-block-end: .5rem;
+  background: #fff3cd;
+  color: #492f00;
+  border: 2px solid #9a6700;
+}

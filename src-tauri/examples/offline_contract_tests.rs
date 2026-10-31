@@ -8,6 +8,9 @@
 #[path = "../tests/interpreter_operations.rs"]
 mod interpreter_operations;
 #[cfg(test)]
+#[path = "../tests/prototype_audio.rs"]
+mod prototype_audio;
+#[cfg(test)]
 #[path = "../tests/prototype_contracts.rs"]
 mod prototype_contracts;
 #[cfg(test)]
@@ -29,4 +32,28 @@ mod session_ports;
 #[path = "../tests/session_validity.rs"]
 mod session_validity;
 
+#[cfg(test)]
+#[path = "../tests/storage_integrity.rs"]
+mod storage_integrity;
+
+#[cfg(test)]
+#[path = "../tests/close_workflow.rs"]
+mod close_workflow;
+
 fn main() {}
+
+#[cfg(test)]
+#[path = "../tests/ipc_boundary.rs"]
+mod ipc_boundary;
+
+#[cfg(test)]
+#[path = "../tests/secrets_policy.rs"]
+mod secrets_policy;
+
+#[cfg(test)]
+#[path = "../tests/provider_contracts.rs"]
+mod provider_contracts;
+
+#[cfg(test)]
+#[path = "../tests/diagnostic_privacy.rs"]
+mod diagnostic_privacy;

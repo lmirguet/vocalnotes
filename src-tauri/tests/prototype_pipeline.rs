@@ -186,7 +186,7 @@ fn inserting_adjacent_syntax_cannot_degrade_opaque_rendering() {
 }
 
 #[test]
-fn close_writes_accepted_note_exclusively_or_keeps_it_on_failure() {
+fn close_keeps_controlled_autosave_or_retains_note_on_failure() {
     use vocalnotes_lib::platform::probe::Proposal;
     let dir = std::env::temp_dir().join(format!("vocalnotes-close-{}", std::process::id()));
     std::fs::create_dir(&dir).unwrap();
@@ -210,12 +210,12 @@ fn close_writes_accepted_note_exclusively_or_keeps_it_on_failure() {
         .accepted
     );
     assert!(core.request_close());
-    assert_eq!(std::fs::read_to_string(&original).unwrap(), "avant");
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "après");
     let saved: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
-    assert_eq!(saved.len(), 2);
+    assert_eq!(saved.len(), 1);
     assert!(
         saved
             .iter()

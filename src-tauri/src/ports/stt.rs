@@ -25,6 +25,10 @@ pub struct Finality {
 }
 
 impl Finality {
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
     pub fn accept(&mut self, value: &Value) -> Result<SttEvent, &'static str> {
         if self.finished {
             return Err("Passage déjà finalisé ; événement rejeté.");

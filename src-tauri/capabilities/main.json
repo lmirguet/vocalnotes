@@ -1,7 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Scaffold : aucune API générique filesystem, shell, réseau, notification ou tray.",
-  "windows": ["main"],
-  "permissions": []
+  "description": "Commandes natives de la note, locales à la fenêtre principale ; aucune API générique filesystem, shell, réseau ou notification.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-startup-status",
+    "allow-prototype-snapshot",
+    "allow-prototype-manual",
+    "allow-prototype-action",
+    "allow-prototype-set-key",
+    "allow-prototype-delete-key",
+    "allow-prototype-key-presence",
+    "allow-prototype-finish-close",
+    "allow-preferences-get",
+    "allow-preferences-set"
+  ]
 }

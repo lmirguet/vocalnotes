@@ -1,13 +1,18 @@
 {
-  "version": "0.14.4",
+  "version": "1.2.5",
   "integration_state_schema": 1,
   "installed_integrations": [
-    "copilot"
+    "copilot",
+    "codex"
   ],
   "integration_settings": {
     "copilot": {
       "script": "sh",
       "invoke_separator": "."
+    },
+    "codex": {
+      "script": "sh",
+      "invoke_separator": "-"
     }
   },
   "integration": "copilot",

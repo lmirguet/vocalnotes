@@ -3,7 +3,7 @@ use tokio_tungstenite::tungstenite::{
     Error, client::IntoClientRequest, error::ProtocolError, http::HeaderValue,
 };
 
-pub const URL: &str = "wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=voxtral-mini-transcribe-realtime-2602";
+pub const URL: &str = "wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=voxtral-mini-transcribe-realtime-3-0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Failure {
@@ -61,7 +61,21 @@ impl Failure {
 pub fn request(
     secret: Option<&str>,
 ) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request, Failure> {
-    let mut request = URL
+    request_for_model(crate::config::preferences::STT_MODEL, secret)
+}
+
+pub fn request_for_model(
+    model: &str,
+    secret: Option<&str>,
+) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request, Failure> {
+    crate::config::preferences::ServiceSelection {
+        provider: "mistral".into(),
+        model: model.into(),
+    }
+    .validate()
+    .map_err(|_| Failure::Configuration)?;
+    let url = format!("wss://api.mistral.ai/v1/audio/transcriptions/realtime?model={model}");
+    let mut request = url
         .into_client_request()
         .map_err(|_| Failure::Configuration)?;
     if let Some(secret) = secret {
@@ -173,7 +187,7 @@ mod tests {
         assert_eq!(r.uri().path(), "/v1/audio/transcriptions/realtime");
         assert_eq!(
             r.uri().query(),
-            Some("model=voxtral-mini-transcribe-realtime-2602")
+            Some("model=voxtral-mini-transcribe-realtime-3-0")
         );
         assert_eq!(r.headers()["upgrade"], "websocket");
         assert_eq!(r.headers()["connection"], "Upgrade");

@@ -1,5 +1,82 @@
 # Plan d'implémentation — Bloc-notes vocal intelligent
 
+**Reprise B08-ADAPTERS, 2026-10-31 :** T020–T022 implémentées pour la tranche
+GNOME/Wayland. Contrats fournisseur testables avec transports simulés partagés,
+capture/normalisation sous `audio/`, adaptateurs STT/LLM sous `adapters/`,
+erreurs et annulations terminales sans réémission ni fournisseur de secours.
+119 tests Rust et 48 JS PASS, build web et check Rust embarqué PASS.
+[Preuves et limites](../../docs/validation/adapters-gnome.md). Aucun accès au micro,
+au trousseau utilisateur ou aux services pendant ce lot. Binaire principal et fenêtre existante
+non remplacés ; recette vocale sur cette nouvelle version encore à effectuer.
+Prochaine unité : T023–T025 (cycle de vie et état de session).
+Ce bilan prévaut sur les états historiques T020–T022 ci-dessous.
+
+**Recette des préférences B07 :** scénarios de fenêtre PASS utilisateur et disque :
+panneau, choix séparés, présence de clé, refus d'identifiant invalide,
+enregistrement et persistance après redémarrage. Modèles habituels rétablis,
+application ouverte ; aucun nouvel essai vocal. [Rapport](../../docs/validation/preferences-gnome.md).
+Les mentions B07 antérieures de recette/binaire en attente sont historiques.
+
+**Reprise B07-PREFERENCES, 2026-10-31 :** T017–T019 implémentées pour
+Linux/GNOME/Wayland. Backend de trousseau explicite avec refus du mock, préférences
+non sensibles strictes et persistées, choix STT/LLM indépendants figés par session,
+panneau Édition → Préférences et mémorisation de la dernière note sauvegardée.
+107 tests Rust et 48 JS PASS ; vrai trousseau testé sur une entrée synthétique
+isolée puis supprimée. [Preuves et limites](../../docs/validation/preferences-gnome.md).
+Binaire principal inchangé et application laissée fermée ; nouvelle recette de
+la fenêtre non effectuée. Prochaine unité : T020–T022 (contrats et adaptateurs).
+Ce bilan prévaut sur les états historiques T017–T019 ci-dessous.
+
+**Recette manuelle GNOME B05/B06 :** scénarios exercés PASS utilisateur et disque :
+affichage, édition/formatage/annulation, autosave, avertissement externe, copies
+de conflit, résolution et fermeture normale. Correctif d'affichage chargé et testé ;
+application fermée. [Preuves et limites](../../docs/validation/ipc-ui-gnome.md).
+Les mentions antérieures de recette/binaire en attente sont historiques.
+
+**Reprise B06-IPC-UI, 2026-10-31 :** T014–T016 implémentées pour la tranche
+GNOME/Wayland. Commandes IPC strictes avec permissions Tauri explicites,
+navigation restreinte, Markdown sans contenu actif ni ressource distante,
+et composants DesktopShell/MenuBar/Toolbar/NoteView/StatusView séparés.
+96 tests Rust et 44 JavaScript PASS ; détails et limites dans le
+[rapport IPC/interface](../../docs/validation/ipc-ui-gnome.md).
+Le binaire natif existant reste inchangé ; recette dans la fenêtre encore à faire.
+Prochaine unité du plan : T017–T019 (secrets et préférences).
+Ce bilan et B05 prévalent sur les anciens états des tâches ci-dessous.
+
+**Reprise B05-STORAGE, 2026-10-31 :** T011–T013 implémentées pour Linux/GNOME/Wayland.
+Autosauvegarde sur destination connue, surveillance des changements externes,
+conflit conservant les versions et fermeture arrêt/invalidation → sauvegarde → sortie.
+90 tests Rust et 34 JavaScript PASS ; typecheck/build web, check Rust toutes cibles
+et format PASS. [Preuves et limites](../../docs/validation/storage-gnome.md).
+Le binaire natif existant reste inchangé : ces nouveautés ne sont pas encore
+recettées dans la fenêtre. Prochaine unité : T014–T016 (frontière IPC et interface).
+Ce bilan prévaut sur les états historiques T011–T013 « non commencées » ci-dessous.
+
+**Bilan courant de validation locale, 2026-10-31 :** [preuves et matrice G02–G09](../../docs/validation/prototype-gnome-final.md).
+GNOME/Wayland uniquement, veille exclue par l’utilisateur, binaire direct sans
+nouveau paquet. Dictée/correction/arrière-plan/pause/verrouillage/enchaînement
+D6 PASS utilisateur. 74 Rust + 32 JS, build web/format, vrais fichiers (droits,
+écriture partielle, opaque), trousseau isolé et perte de connexion du moniteur
+GNOME PASS. Dernière recette visuelle opaque/copie/refus d’écrasement PASS utilisateur et
+comparaison d’octets PASS. T006/T007 cochées pour la tranche GNOME/Wayland
+convenue ; aucune certification Windows, veille, paquet ou fonction future.
+Les états plus anciens ci-dessous sont historiques ; ce bilan courant prévaut.
+
+
+**Reprise B04-GNOME, 2026-10-31 :** validation T006/T007 sur GNOME/Wayland
+uniquement, conformément à la demande actuelle. Préparation automatisée Fedora
+réussie et binaire natif lancé ; recette manuelle PASS utilisateur, aucun
+GO. Pas de replanification, installation système supplémentaire ni travail Windows.
+Écriture/présence trousseau PASS utilisateur ; premier essai vocal FAIL sans
+texte malgré réponses STT/LLM. Correctif de diagnostic D1 testé hors ligne,
+puis build embarqué et relance après fermeture sûre confirmée. La phrase proposée avec création
+de note demandait une action vocale encore indisponible. D2 a ensuite localisé
+un refus de ciblage sur note vide ; D3 restreint ce contexte à insert et valide
+la première dictée (retour utilisateur et commit console PASS). Les autres
+recettes T006/T007 restent ouvertes.
+[État actuel](../../docs/validation/prototype-gnome.md). Les priorités Windows
+et reports GNOME des sections historiques ne gouvernent plus cette reprise.
+
 **État autoritaire B03-OFFLINE, 2026-10-31 :** T010 terminée ; 67 tests Rust
 Linux et 64 Rust Windows ciblés (9 lib + 55 tests partagés), 31 JS sur chaque
 hôte, typecheck Linux, fmt/check Linux et check lib MSVC embarqué PASS.
@@ -312,8 +389,8 @@ Exigences : REQ-039, REQ-050. Entrées : décisions de ce plan et revue interne.
 #### P1.6 — Faisabilité et premier prototype sur deux desktops
 Exigences : REQ-028, REQ-029, REQ-032, REQ-033, REQ-035, REQ-036, REQ-037, REQ-041, REQ-050, REQ-052.
 
-- [ ] T006 [Plan:1.6] Réaliser une tranche verticale réutilisable dans `src-tauri/src/platform/probe.rs` et `src/ui/Prototype.ts` : capture CPAL, normalisation/VAD/rotation WSS, LLM strict, génération et interruption prioritaire, ProseMirror visuel en manuel/read-only vocal, préservation d'un bloc opaque, trousseau, cycle OS et sauvegarde ; menus et boutons WordPad minimaux, aucune notification ni cache de contenu ; dépend de : T005 ; ne pas annoncer compatible avant T007.
-- [ ] T007 [Plan:1.6] Recetter le prototype sur les deux systèmes dans `docs/validation/prototype-gnome.md`, `docs/validation/prototype-windows.md`, `docs/validation/prototype-metrics.md` : G02–G09, passage finalisé sans perte à la rotation, pause naturelle rapide, édition visuelle/protection opaque et invariants transversaux ; dépend de : T006 ; NO-GO exige correction ou révision technique avant stories, un essai absent reste NON EXÉCUTÉ.
+- [X] T006 [Plan:1.6] **Clôture locale GNOME/Wayland** — Réaliser une tranche verticale réutilisable dans `src-tauri/src/platform/probe.rs` et `src/ui/Prototype.ts` : capture CPAL, normalisation/VAD/rotation WSS, LLM strict, génération et interruption prioritaire, ProseMirror visuel en manuel/read-only vocal, préservation d'un bloc opaque, trousseau, cycle OS et sauvegarde ; menus et boutons WordPad minimaux, aucune notification ni cache de contenu ; dépend de : T005 ; ne pas annoncer compatible avant T007.
+- [X] T007 [Plan:1.6] **Clôture locale GNOME/Wayland, périmètre réduit par l’utilisateur** — Recetter la tranche prototype dans `docs/validation/prototype-gnome-final.md` et `docs/validation/prototype-metrics.md` (Windows et veille exclus ; aucun paquet certifié) : G02–G09, passage finalisé sans perte à la rotation, pause naturelle rapide, édition visuelle/protection opaque et invariants transversaux ; dépend de : T006 ; NO-GO exige correction ou révision technique avant stories, un essai absent reste NON EXÉCUTÉ.
 
 ### Phase 2 — Fondations transversales
 
@@ -329,30 +406,30 @@ Exigences : REQ-005, REQ-015, REQ-016, REQ-017, REQ-018, REQ-019, REQ-032, REQ-0
 #### P2.2 — Fichiers et fermeture sûre
 Exigences : REQ-020, REQ-022, REQ-023, REQ-024, REQ-036, REQ-037.
 
-- [ ] T011 [Plan:2.2] Écrire `src-tauri/tests/storage_integrity.rs` : octets hors cible, version disque, disque plein, droits, interruption et course externe avant remplacement ; dépend de : T007.
-- [ ] T012 [Plan:2.2] Implémenter la note unique, ouverture/destination, sauvegarde automatique contrôlée et conflit non destructif dans `src-tauri/src/storage/markdown_file.rs` ; dépend de : T009, T011.
-- [ ] T013 [Plan:2.2] Implémenter l'ordre arrêt/invalidation → sauvegarde → fin/sortie et l'échec sans fermeture silencieuse dans `src-tauri/src/app/close.rs` ; dépend de : T012.
+- [X] T011 [Plan:2.2] Écrire `src-tauri/tests/storage_integrity.rs` : octets hors cible, version disque, disque plein, droits, interruption et course externe avant remplacement ; dépend de : T007.
+- [X] T012 [Plan:2.2] Implémenter la note unique, ouverture/destination, sauvegarde automatique contrôlée et conflit non destructif dans `src-tauri/src/storage/markdown_file.rs` ; dépend de : T009, T011.
+- [X] T013 [Plan:2.2] Implémenter l'ordre arrêt/invalidation → sauvegarde → fin/sortie et l'échec sans fermeture silencieuse dans `src-tauri/src/app/close.rs` ; dépend de : T012.
 
 #### P2.3 — Frontière UI et Markdown
 Exigences : REQ-004, REQ-021, REQ-022, REQ-026, REQ-027, REQ-030.
 
-- [ ] T014 [Plan:2.3] Écrire `src-tauri/tests/ipc_boundary.rs`, `src/ui/markdown.test.ts` et `src/ui/DesktopShell.test.ts` pour contenu hostile, chemins, HTML/protocoles, images distantes, absence de cible fictive et présence des menus Fichier/Édition/Aide et du bandeau de mise en forme et de démarrage/arrêt vocal (S4.5) ; dépend de : T007.
-- [ ] T015 [Plan:2.3] Implémenter commandes IPC allowlistées et événements d'état français sans données secrètes dans `src-tauri/src/app/commands.rs` et `src-tauri/capabilities/main.json` ; dépend de : T009, T012, T014.
-- [ ] T016 [Plan:2.3] Créer la fenêtre simple inspirée de WordPad dans `src/ui/DesktopShell.ts`, les menus Fichier/Édition/Aide dans `src/ui/MenuBar.ts`, le bandeau de mise en forme et démarrage/arrêt vocal dans `src/ui/Toolbar.ts`, la note mise en forme et les états lisibles sans vol de focus dans `src/ui/NoteView.ts` et `src/ui/StatusView.ts` ; relier les commandes aux actions partagées à mesure de leur implémentation, sans dupliquer leur logique ni autoriser l'édition manuelle pendant le vocal ; dépend de : T015.
+- [X] T014 [Plan:2.3] Écrire `src-tauri/tests/ipc_boundary.rs`, `src/ui/markdown.test.ts` et `src/ui/DesktopShell.test.ts` pour contenu hostile, chemins, HTML/protocoles, images distantes, absence de cible fictive et présence des menus Fichier/Édition/Aide et du bandeau de mise en forme et de démarrage/arrêt vocal (S4.5) ; dépend de : T007.
+- [X] T015 [Plan:2.3] Implémenter commandes IPC allowlistées et événements d'état français sans données secrètes dans `src-tauri/src/app/commands.rs` et `src-tauri/capabilities/main.json` ; dépend de : T009, T012, T014.
+- [X] T016 [Plan:2.3] Créer la fenêtre simple inspirée de WordPad dans `src/ui/DesktopShell.ts`, les menus Fichier/Édition/Aide dans `src/ui/MenuBar.ts`, le bandeau de mise en forme et démarrage/arrêt vocal dans `src/ui/Toolbar.ts`, la note mise en forme et les états lisibles sans vol de focus dans `src/ui/NoteView.ts` et `src/ui/StatusView.ts` ; relier les commandes aux actions partagées à mesure de leur implémentation, sans dupliquer leur logique ni autoriser l'édition manuelle pendant le vocal ; dépend de : T015.
 
 #### P2.4 — Configuration et secrets natifs
 Exigences : REQ-038, REQ-039, REQ-040, REQ-041, REQ-042, REQ-043, REQ-045.
 
-- [ ] T017 [Plan:2.4] Écrire `src-tauri/tests/secrets_policy.rs` pour création/remplacement/suppression, commande de saisie dédiée, absence de clé dans état durable UI/config/logs et trousseau indisponible sans fallback ; dépend de : T007.
-- [ ] T018 [Plan:2.4] Intégrer keyring 3.6.3 avec backends Secret Service/Credential Manager explicites et commande IPC de secret masqué à durée de vie courte dans `src-tauri/src/platform/secrets.rs`, rejeter le backend mock en production ; dépend de : T017.
-- [ ] T019 [Plan:2.4] Implémenter préférences non sensibles, présence des clés, choix STT/LLM séparés et prise d'effet à la session suivante dans `src-tauri/src/config/preferences.rs` ; dépend de : T010, T018.
+- [X] T017 [Plan:2.4] Écrire `src-tauri/tests/secrets_policy.rs` pour création/remplacement/suppression, commande de saisie dédiée, absence de clé dans état durable UI/config/logs et trousseau indisponible sans fallback ; dépend de : T007.
+- [X] T018 [Plan:2.4] Intégrer keyring 3.6.3 avec backends Secret Service/Credential Manager explicites et commande IPC de secret masqué à durée de vie courte dans `src-tauri/src/platform/secrets.rs`, rejeter le backend mock en production ; dépend de : T017.
+- [X] T019 [Plan:2.4] Implémenter préférences non sensibles, présence des clés, choix STT/LLM séparés et prise d'effet à la session suivante dans `src-tauri/src/config/preferences.rs` ; dépend de : T010, T018.
 
 #### P2.5 — Adaptateurs Mistral indépendants
 Exigences : REQ-001, REQ-033, REQ-039, REQ-043, REQ-045, REQ-048.
 
-- [ ] T020 [Plan:2.5] Écrire `src-tauri/tests/provider_contracts.rs` avec transport simulé : auth expurgée, segments/corrections, JSON invalide, erreur réseau, annulation et absence de fournisseur de secours ; dépend de : T010.
-- [ ] T021 [Plan:2.5] Intégrer capture CPAL, downmix/rubato 16 kHz, VAD et passages WSS dans `src-tauri/src/audio/capture.rs` et `src-tauri/src/adapters/mistral_stt.rs` : modèle retenu, bornes mémoire et erreur de saturation, réconciliation done sans édition ordinaire sur delta ni réémission indue ; dépend de : T019, T020.
-- [ ] T022 [Plan:2.5] Intégrer `mistral-large-latest`, schéma strict validé localement, voie prioritaire limitée à l'interruption et compteurs de requêtes dans `src-tauri/src/adapters/mistral_interpreter.rs`, sans outils arbitraires ni conversation persistante ; dépend de : T019, T020.
+- [X] T020 [Plan:2.5] Écrire `src-tauri/tests/provider_contracts.rs` avec transport simulé : auth expurgée, segments/corrections, JSON invalide, erreur réseau, annulation et absence de fournisseur de secours ; dépend de : T010.
+- [X] T021 [Plan:2.5] Intégrer capture CPAL, downmix/rubato 16 kHz, VAD et passages WSS dans `src-tauri/src/audio/capture.rs` et `src-tauri/src/adapters/mistral_stt.rs` : modèle retenu, bornes mémoire et erreur de saturation, réconciliation done sans édition ordinaire sur delta ni réémission indue ; dépend de : T019, T020.
+- [X] T022 [Plan:2.5] Intégrer `mistral-large-latest`, schéma strict validé localement, voie prioritaire limitée à l'interruption et compteurs de requêtes dans `src-tauri/src/adapters/mistral_interpreter.rs`, sans outils arbitraires ni conversation persistante ; dépend de : T019, T020.
 
 #### P2.6 — Écoute, interruptions et hors fenêtre
 Exigences : REQ-013, REQ-028, REQ-029, REQ-030, REQ-031, REQ-032, REQ-033, REQ-034, REQ-035, REQ-036.

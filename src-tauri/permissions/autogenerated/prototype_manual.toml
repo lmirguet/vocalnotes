@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prototype-manual"
+description = "Enables the prototype_manual command without any pre-configured scope."
+commands.allow = ["prototype_manual"]
+
+[[permission]]
+identifier = "deny-prototype-manual"
+description = "Denies the prototype_manual command without any pre-configured scope."
+commands.deny = ["prototype_manual"]

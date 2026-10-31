@@ -34,7 +34,12 @@ describe("frontières du scaffold", () => {
     expect(tauri.bundle.targets).toEqual(["rpm", "nsis"]);
     expect(tauri.app.windows.map((w) => w.label)).toEqual(["main"]);
     expect(capability.windows).toEqual(["main"]);
-    expect(capability.permissions).toEqual([]);
+    expect(capability.permissions).toEqual([
+      "allow-startup-status", "allow-prototype-snapshot", "allow-prototype-manual",
+      "allow-prototype-action", "allow-prototype-set-key", "allow-prototype-delete-key",
+      "allow-prototype-key-presence", "allow-prototype-finish-close",
+      "allow-preferences-get", "allow-preferences-set",
+    ]);
     expect(tauri.app.security.csp).toContain("default-src 'self'");
     expect(tauri.app.security.csp).toContain("object-src 'none'");
     expect(tauri.app.security.csp).not.toContain("https:");

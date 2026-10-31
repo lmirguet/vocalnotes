@@ -1,20 +1,261 @@
+adapters_B08:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-voice-recipe-pending
+  scope: [T020, T021, T022]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T020, T021, T022]
+  tests: {rust_lib: 12, rust_shared: 107, provider_contracts: 10, javascript: 48, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, rust_format: PASS}
+  tdd: "Module adapters absent, puis réémission possible après annulation d'append ; échecs constatés avant correction."
+  report: docs/validation/adapters-gnome.md
+  implementation: "Code partagé avec transports simulés, façades sans duplication, annulation d'envoi terminale, saturation capture testée sans périphérique."
+  main_binary_rebuilt: false
+  main_binary_sha256: b549a055da0e2668840ea43f93f92806fe2ed216f52e8fafe2c08dcfad10f6b9
+  existing_application_restarted: false
+  provider_microphone_user_keyring_calls: false
+  synthetic_unavailable_keyring_child_test: true
+  system_installations: false
+  new_dependencies: false
+  next_tasks: [T023, T024, T025]
+  historical_precedence: "Ce bloc et les compteurs globaux prévalent sur les lots historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+preferences_B07:
+  date: "2026-10-31"
+  status: implemented-native-preferences-ui-scenarios-passed
+  scope: [T017, T018, T019]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T017, T018, T019]
+  tests: {rust_lib: 10, rust_shared: 97, javascript: 48, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, rust_format: PASS}
+  native_keyring: PASS-isolated-synthetic-create-replace-read-delete-cleaned-up
+  application_credential_accessed: false
+  unavailable_keyring: PASS-child-invalid-dbus-no-fallback
+  preferences: "Modèles séparés, reprise figée, nouveau démarrage explicite, dernière note sauvée ; aucune clé ni contenu."
+  permissions: "Deux commandes de préférences ajoutées à la liste applicative locale (dix au total)."
+  report: docs/validation/preferences-gnome.md
+  main_binary_rebuilt: true
+  main_binary_sha256: b549a055da0e2668840ea43f93f92806fe2ed216f52e8fafe2c08dcfad10f6b9
+  application: open-after-user-validated-preferences-recipe
+  provider_microphone_calls: false
+  system_installations: false
+  new_dependencies: false
+  next_tasks: [T020, T021, T022]
+  historical_precedence: "Ce bloc et les compteurs globaux prévalent sur les lots historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+  native_preferences_recipe: {panel: PASS-user, separate_models: PASS-user, key_presence: PASS-user, invalid_model_rejected: PASS-user, save: PASS-user-disk, restart_persistence: PASS-user-disk, usual_models_restored: PASS-user-disk}
+  native_recipe_limits: "Pas de nouvel essai vocal/fournisseur ; gel des modèles vérifié par tests automatisés."
+ipc_ui_B06:
+  date: "2026-10-31"
+  status: implemented-native-manual-scenarios-passed
+  scope: [T014, T015, T016]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T014, T015, T016]
+  tests: {rust_lib: 10, rust_shared: 86, javascript: 45, failed: 0}
+  checks: {frontend_typecheck_build: PASS, rust_all_targets: PASS, embedded_rust_check: PASS, rust_format: PASS}
+  tdd: "Modules/méthodes absents puis champs supplémentaires acceptés sur variante unitaire ; correction avant validation finale."
+  report: docs/validation/ipc-ui-gnome.md
+  permissions: "Huit commandes applicatives explicites, origine locale et fenêtre main uniquement."
+  rendering: "HTML opaque/littéral, liens sans href, images sans src, collage texte brut, aucune cible de traitement inventée."
+  main_binary_rebuilt: true
+  main_binary_sha256: 42c015d651a532aa116a6eba4451a5bcfcdc9df3bef3c81277a61e77200fd904
+  provider_microphone_keyring_calls: false
+  system_installations: false
+  next_tasks: [T017, T018, T019]
+  historical_precedence: "Ce bloc et les champs de progression globaux prévalent sur les états historiques ci-dessous."
+  hooks: {before: absent, after: absent}
+  native_recipe: {manual_edit: PASS-user, safe_rendering: PASS-user, autosave: PASS-disk, external_warning: PASS-user-console, conflict_copies: PASS-user-disk, resolution: PASS-user-disk, close: PASS-user-process-absence}
+  application: closed-by-user-process-absence-verified
+  native_recipe_limits: "Scénarios manuels exercés seulement ; ACL/navigation exhaustive, vocal nouveau, fermeture en erreur non recettés."
+storage_B05:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-recipe-pending
+  scope: [T011, T012, T013]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T011, T012, T013]
+  tests: {rust_lib: 10, rust_shared: 80, javascript: 34, failed: 0}
+  checks: {rust_all_targets: PASS, rust_format: PASS, frontend_typecheck_build: PASS}
+  report: docs/validation/storage-gnome.md
+  behavior: "Autosave contrôlé, inotify indicatif, copies de conflit, fermeture après arrêt/invalidation et sauvegarde."
+  disk_failure: "Écriture partielle réelle avec RLIMIT_FSIZE ; volume physiquement plein non exercé."
+  process_interruption: "Sortie du sous-processus avant/après échange, deux versions récupérables."
+  main_binary_rebuilt: false
+  main_binary_sha256: 5b441b0be92924b6516b77574b066b116488c475b29e591e7401b9a39732f321
+  provider_microphone_keyring_calls: false
+  system_installations: false
+  dependencies: "sha2/libc directs, versions déjà verrouillées ; aucun téléchargement."
+  next_tasks: [T014, T015, T016]
+  historical_precedence: "Ce bloc décrit le lot actuel ; les états B01–B04 et B03-OFFLINE ci-dessous sont historiques."
+  hooks: {before: absent, after: absent}
 metadata:
   generated: "2026-10-30"
   last_updated: "2026-10-31"
   source_tasks: "/home/laurent/projects/vocalnotes/specs/001-bloc-notes-vocal/tasks.md"
   batch_id: B03-OFFLINE
   status: partial
-  scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010]
+  scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022]
   note: "Checkpoint de progression partielle, pas de certification des 60 tâches ou du prototype."
-  latest_attempt: B03-OFFLINE
+  latest_attempt: B08-ADAPTERS
   gate_exception: "Utilisateur 2026-10-31 : développement/tests malgré T007 ; autres dépendances et recettes deux OS inchangées."
+gnome_validation_B04:
+  status: completed-GNOME-prototype-scoped
+  scope: [T006, T007]
+  platform: Fedora44-GNOME50.6-Wayland
+  windows_in_scope: false
+  completed_tasks: [T006, T007]
+  rust_tests: {passed: 74, failed: 0}
+  javascript_tests: {passed: 32, failed: 0}
+  rust_format: PASS
+  frontend_typecheck_build: PASS
+  native_build_embedded_assets: PASS
+  lifecycle_initialization: {result: PASS, exit_code: 0}
+  rpm: generated-not-installed
+  previous_launch: {pid: 1152666, tool_session: 49945, status: user-closed-process-absence-verified}
+  launch: {method: direct-debug-binary-fix-D6, tool_session: 26421}
+  runtime_recipe: {manual: PASS-user-confirmed, microphone: PASS-bounded-NoMachine, providers: PASS-D6-bounded, keyring: PASS-isolated-native-backend, lock: PASS, suspend: excluded-by-user}
+  voice_result: PASS-D6-multiple-passages
+  diagnostic_fix: {rust_tests: 66, javascript_tests: 32, frontend_build: PASS, loaded_in_gui: true}
+  D2_console_audio:
+    rust_tests: {lib: 10, shared: 57, failed: 0}
+    format_diff_checks: PASS
+    requested_by_user: true
+    reason: "Essai D1 non concluant, audio reçu incertain et messages UI volatils."
+    contents: "Messages natifs statiques et métadonnées numériques ; aucun secret/audio/transcription/note."
+    meter: "Une fenêtre par seconde hors callback : samples, RMS, peak, PCM peak, frames et VAD."
+    loaded_in_gui: true
+    build_native: PASS
+    startup_console_confirmed: true
+    tool_session: 47020
+    previous_instance: "PID1169784 arrêté par SIGTERM à la demande explicite de l’utilisateur ; chemin vérifié, exit143, aucun SIGKILL."
+    provider_calls_by_agent: 0
+  D2_runtime_observed:
+    audio_input: "44100 Hz, 2 canaux, signal non silencieux et VAD pendant parole"
+    stt: {final_nonempty_bytes: 73}
+    llm: {http_status: 200, actions: 1}
+    commit: "Texte attendu absent ; aucun effet"
+    outcome: {applied: 0, clarifications: 0, rejected: 1, no_change: 0}
+    microphone_stop_confirmed: true
+  D3_fix:
+    rust_tests: {lib: 10, shared: 59, failed: 0}
+    format_diff_checks: PASS
+    scope: "Note vide : insert seul, ancre native exacte ; prompt contenu nouveau distinct du texte cible."
+    native_guards_relaxed: false
+    loaded_in_gui: true
+    build_native: PASS
+    tool_session: 45903
+    D2_close: "Utilisateur, absence de processus vérifiée, ancienne session47020 exit0."
+  D3_runtime:
+    user_result: PASS-text-appeared-correctly
+    stt_final_bytes: 45
+    llm_http_status: 200
+    operation: insert
+    outcome: {applied: 1, clarifications: 0, rejected: 0, no_change: 0}
+    explicit_stop_and_microphone_closed: true
+    correction_and_pause:
+      user_result: PASS
+      stt_final_bytes: 42
+      operation: replace
+      cumulative_outcome: {applied: 2, clarifications: 0, rejected: 0, no_change: 0}
+      pause_command_timestamp_ms: 1793442149392
+      microphone_closed_timestamp_ms: 1793442149394
+      command_origin_in_console: not-distinguished
+    background_recipe:
+      user_result: FAIL-replaced-existing-text-instead-of-adding
+      stt_final_bytes: 39
+      operation: replace
+      cumulative_outcome: {applied: 3, clarifications: 0, rejected: 0, no_change: 0}
+    D4_fix: {kind: preserve-existing-content-prompt, loaded_in_gui: true, tool_session: 5444, native_build: PASS, rust_tests_passed: 69, runtime_verified: false}
+    D4_user_feedback:
+      correction: PASS-user-confirmed
+      additional_idea: merged-with-existing-idea-user-reported
+      both_objects_retained: user-reported
+      nuance_fidelity: not-certified
+      background_window_change: not-explicitly-confirmed
+      cumulative_outcome: {applied: 5, clarifications: 0, rejected: 0, no_change: 0}
+      explicit_stop_and_microphone_closed: true
+      exact_mapping_of_operations_to_user_steps: unavailable
+    D4_background_reservation_recipe:
+      user_result: PASS
+      scope: single-background-scenario-with-reservation
+      content_inspected_by_agent: false
+      cumulative_outcome: {applied: 7, clarifications: 0, rejected: 0, no_change: 0}
+      empty_stt_finals_observed: true
+      last_pause_microphone_closed: true
+      application_exit_code: 0
+    D4_GNOME_lock:
+      user_result: PASS-manual-mode-after-unlock
+      tool_session: 4710
+      os_interruption_timestamp_ms: 1793442895112
+      native_microphone_closed_timestamp_ms: 1793442895115
+      automatic_restart_observed: false
+      scope: lock-unlock-only
+      suspend_tested: false
+      subscription_loss_tested: false
+    suspend_scope_decision:
+      status: excluded-from-local-recipe-by-user
+      reason: cannot-test-on-this-computer
+      tested: false
+      blocks_local_progress: false
+    multiple_passages_recipe:
+      user_result: FAIL-provider-response-rejected
+      observed_errors: [strict-response-contract, envelope-invariants]
+      exact_provider_violation: unknown-with-D4-logs
+    D5_fix:
+      kind: service-error-wording-numeric-diagnostics-and-envelope-prompt
+      offline_tests: {lib: 10, shared: 60, failed: 0}
+      native_build: PASS
+      tool_session: 56340
+      loaded_in_gui: true
+      runtime_verified: false
+      validation_relaxed: false
+    D5_runtime:
+      first_passage: PASS-insert-applied
+      second_passage: FAIL-provider-envelope
+      refused_envelope: {actions: 2, message_bytes: 0, status_clarify: true}
+      microphone_closed: true
+    D6_fix:
+      kind: mutually-exclusive-schema-envelope-alternatives
+      offline_tests: {lib: 10, shared: 61, failed: 0}
+      independent_json_schema_cases: {passed: 18, failed: 0}
+      native_build: PASS
+      tool_session: 26421
+      loaded_in_gui: true
+      runtime_verified: true
+      native_validation_relaxed: false
+    D6_runtime:
+      user_result: PASS-multiple-passages
+      schema_accepted_by_provider: true
+      cumulative_outcome: {applied: 5, clarifications: 0, rejected: 0, no_change: 0}
+      contract_errors_observed: false
+      pause_timestamp_ms: 1793443605599
+      native_microphone_closed_timestamp_ms: 1793443605602
+      application_state: open-paused
+      scope: single-bounded-multiple-passages-recipe
+    next_recipe: none-local-prototype-validation-complete
+    T006_T007_complete: true
+    completion_scope: GNOME-Wayland-prototype-only
+    excluded: [Windows, suspend-on-this-host, package-installation-certification]
+  native_completion_checks:
+    rust_tests: {lib: 10, shared_including_audio: 64, failed: 0}
+    javascript_tests: {passed: 32, failed: 0}
+    frontend_typecheck_build: PASS
+    files_real_permissions_exclusive_utf8_opaque: PASS
+    real_partial_write_size_limit: PASS-note-retained
+    keyring_real_isolated_create_replace_delete: PASS-cleaned-up
+    keyring_unavailable_child_bus: PASS
+    controller_unavailable_child_bus: PASS-manual-zero-provider-audio
+    real_GNOME_monitor_connection_loss: PASS-isolated-relay
+    visual_opaque_file_recipe: PASS-user-and-byte-comparison
+    main_binary_rebuilt_during_checks: false
+    report: docs/validation/prototype-gnome-final.md
+  report: docs/validation/prototype-gnome-final.md
+  note: "Clôture du prototype GNOME sur preuves natives et utilisateur ; aucune certification Windows/veille/paquet/fonctions futures."
 summary:
   total_tasks: 60
-  completed_tasks: 8
+  completed_tasks: 22
   in_progress_tasks: 0
-  blocked_tasks: 2
-  pending_tasks: 50
-  completion_percentage: 13.33
+  blocked_tasks: 0
+  pending_tasks: 38
+  completion_percentage: 36.67
 offline_contracts_B03:
   task: T010
   status: completed
@@ -224,66 +465,23 @@ tasks:
       requirements: [REQ-039, REQ-050]
     remaining: []
   - task_id: T006
-    status: blocked
-    blocked_by: []
-    partial_implementation: true
-    implementation:
-      files_changed:
-        - {file: src-tauri/src/platform/probe.rs, description: "Canonique/patches/ack/générations, prévalidation entière, sauvegarde exclusive et fermeture protégée."}
-        - {file: src-tauri/src/platform/secrets.rs, description: "Keyring réel ; pas de test trousseau réel ni de lecture de clé locale."}
-        - {file: src-tauri/src/platform/mistral.rs, description: "WSS duplex/HTTPS natifs raccordés, strict schema et priorité ; aucun appel réel."}
-        - {file: src-tauri/src/platform/audio.rs, description: "Downmix/rubato/VAD testés synthétiquement, aucun micro."}
-        - {file: src-tauri/src/platform/capture.rs, description: "CPAL compilé avec ALSA, annulation dès init/callback, tampon borné ; aucun micro démarré."}
-        - {file: src-tauri/src/platform/mod.rs, description: "Modules."}
-        - {file: src-tauri/src/app/commands.rs, description: "Registre d'actions typées, IPC manuel/secret."}
-        - {file: src-tauri/src/app/mod.rs, description: "Entrée app."}
-        - {file: src-tauri/src/lib.rs, description: "État natif et fermeture."}
-        - {file: src/ui/Prototype.ts, description: "Accord contextualisé/vocal, structure simple, raccourcis/resync, mesures et fermeture coordonnée."}
-        - {file: src/ui/Prototype.test.ts, description: "10 tests."}
-        - {file: src-tauri/tests/prototype_contracts.rs, description: "9 tests."}
-        - {file: src-tauri/tests/prototype_services.rs, description: "4 tests."}
-        - {file: src-tauri/tests/prototype_audio.rs, description: "3 tests sans micro."}
-        - {file: src/main.ts, description: "Montage natif du prototype partiel."}
-        - {file: src/style.css, description: "Styles locaux."}
-        - {file: src-tauri/Cargo.toml, description: "Dépendances réelles ajoutées."}
-        - {file: src-tauri/Cargo.lock, description: "Résolution verrouillée."}
-        - {file: src-tauri/src/platform/controller.rs, description: "Contrôleur continu/priorité/cancel/enveloppe et mesures ; 3 tests unitaires."}
-        - {file: src-tauri/src/platform/pipeline.rs, description: "Framing/pré-roll/rotation bornés."}
-        - {file: src-tauri/src/platform/lifecycle.rs, description: "GNOME ScreenSaver/login1, abonnements/état initial/santé ; fail-closed."}
-        - {file: src-tauri/src/platform/lifecycle_windows.rs, description: "WTS/alimentation invisible, types API seulement vérifiés sur Linux."}
-        - {file: src-tauri/tests/prototype_pipeline.rs, description: "9 tests déterministes."}
-        - {file: src-tauri/tests/prototype_envelope.rs, description: "1 test identité/consommation native."}
-        - {file: src-tauri/tests/prototype_ordered_save.rs, description: "2 tests save ordonné/zéro effet."}
-        - {file: src-tauri/tests/windows_lifecycle_types.rs, description: "Forme API Windows sur Linux ; 0 test runtime."}
-        - {file: src-tauri/examples/probe_lifecycle.rs, description: "Sondage OS réel sans micro/trousseau/API."}
+    status: completed
+    scope: GNOME-Wayland-prototype-only
+    partial_implementation: false
     verification:
-      build_passed: true
-      frontend_build_passed: true
-      frontend_tests: {passed: 22, failed: 0, skipped: 0}
-      before_cpal: {native_check: PASS, native_build: PASS, rust_tests_passed: 17, rust_tests_failed: 0, rust_tests_skipped: 0}
-      final_tree: {native_check_tests: PASS, native_build: PASS, rust_tests_passed: 32, rust_tests_failed: 0, rust_tests_skipped: 0, cpal_compiled: true, rust_format: PASS, cargo_metadata_locked: PASS}
-      os_host_probe: {exit_code: 2, result: "Surveillance native indisponible WSL2", microphone_or_keyring_or_provider_used: false}
-      windows: "Type-check des API sur Linux seulement ; 0 test Windows."
-      notes: "ALSA levé, tranche compilée/testée déterministement. Pas de micro/keyring/API réels ni recette des deux desktops, donc tâche toujours partielle/décochée."
-    upstream_trace:
-      plan_item: "1.6"
-      requirements: [REQ-028, REQ-029, REQ-032, REQ-033, REQ-035, REQ-036, REQ-037, REQ-041, REQ-050, REQ-052]
-    remaining:
-      - "Vérifier réellement micro/WSS/LLM/keyring, rotation sans perte et pause naturelle rapide sur les cibles ; aucun GO sur tests/mocks."
-      - "Vérifier GNOME ScreenSaver/login1 et WTS/alimentation Windows natifs, perte d'abonnement, lock/sleep et fermeture, sans auto-reprise."
-      - "Tranche bornée : copies exclusives/save dernière action, listes opaques ; pont/remplacement conditionnel/commandes fichiers vocales complets non annoncés, tâches futures non cochées."
+      method: "Recettes réelles utilisateur, 74 Rust/32 JS, fichiers natifs et trousseau isolé ; bilan final GNOME."
+      report: docs/validation/prototype-gnome-final.md
+      limitations: [Windows-not-certified, suspend-excluded-by-user, no-package-certification, future-storage-tasks-not-certified]
   - task_id: T007
-    status: blocked
-    blocked_by: [T006]
-    implementation:
-      files_changed:
-        - {file: docs/validation/prototype-gnome.md, description: "Recette G02–G09 NON EXÉCUTÉE."}
-        - {file: docs/validation/prototype-windows.md, description: "Recette G02–G09 NON EXÉCUTÉE."}
-        - {file: docs/validation/prototype-metrics.md, description: "Mesures runtime absentes/inconnues."}
-    remaining:
-      - "Windows build/lancement natifs établis B02-W01 ; recette G02–G09 interactive non exécutée, GNOME/Wayland différée."
-      - "Essais API synthétiques bornés utiles seulement après prototype ; autorisation de ce lot reçue."
-      - "Mesures et rapports séparés ; absence d'essai = NON EXÉCUTÉ, pas GO."
+    status: completed
+    scope: GNOME-Wayland-prototype-only
+    verification:
+      method: "Matrice G02-G09 bornée, dernier contrôle visuel confirmé et copie comparée octet pour octet."
+      report: docs/validation/prototype-gnome-final.md
+      opaque_bytes: PASS
+      existing_file_unchanged: PASS
+      local_go: true
+      multiplatform_go: false
   - task_id: T008
     status: completed
     implementation:
@@ -334,16 +532,13 @@ tasks:
       - "Contrats fichiers/session formalisés ; effets fichiers vocaux complets attendent intégration T024. Aucun GO desktop/API ni garantie stockage."
 out_of_scope_tasks:
   status: pending
-  task_ids: [T011, T012, T013, T014, T015, T016, T017,
-    T018, T019, T020, T021, T022, T023, T024, T025, T026, T027, T028, T029,
+  task_ids: [T023, T024, T025, T026, T027, T028, T029,
     T030, T031, T032, T033, T034, T035, T036, T037, T038, T039, T040, T041,
     T042, T043, T044, T045, T046, T047, T048, T049, T050, T051, T052, T053,
     T054, T055, T056, T057, T058, T059, T060]
   note: "Non exécutées ; dérogation T007 uniquement développement, autres dépendances exactes inchangées."
 pending_tasks:
-  - {task_id: T011, blocked_by: [], note: "Prochaine unité TDD, autorisée sous dérogation ; non commencée, T010 désormais achevée."}
-  - {task_id: T014, blocked_by: [], note: "Non commencée, gate T007 dérogé pour développement seulement."}
-  - {task_id: T017, blocked_by: [], note: "Non commencée, gate T007 dérogé pour développement seulement."}
+  - {task_id: T023, blocked_by: [], note: "Prochain lot : tests du cycle de vie avant intégration et état de session."}
 untracked_changes: []
 traceability_chain:
   - {plan_item: "1.1", tasks: [T001], status: "documentary-complete"}
@@ -351,10 +546,14 @@ traceability_chain:
   - {plan_item: "1.3", tasks: [T003], status: "documentary-complete"}
   - {plan_item: "1.4", tasks: [T004], status: "documentary-complete"}
   - {plan_item: "1.5", tasks: [T005], status: completed-scaffold}
-  - {plan_item: "1.6", tasks: [T006, T007], status: partial-blocked}
+  - {plan_item: "1.6", tasks: [T006, T007], status: completed-GNOME-scoped}
   - {plan_item: "2.1", tasks: [T008, T009], status: completed-foundation}
   - {plan_item: "2.1", tasks: [T010], status: completed-contract}
-validation:
+  - {plan_item: "2.2", tasks: [T011, T012, T013], status: implemented-GNOME-offline-validated}
+  - {plan_item: "2.3", tasks: [T014, T015, T016], status: implemented-GNOME-offline-validated}
+  - {plan_item: "2.4", tasks: [T017, T018, T019], status: implemented-tests-and-native-isolated-keyring-validated}
+  - {plan_item: "2.5", tasks: [T020, T021, T022], status: implemented-offline-validated}
+historical_validation_before_GNOME_completion:
   passed: false
   errors: []
   warnings:

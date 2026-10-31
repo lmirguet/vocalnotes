@@ -1,5 +1,30 @@
 # T002 — contrôle fournisseur préparé
 
+## Reprise GNOME — état courant 2026-10-31
+
+Les mentions « intégration à écrire », « aucun appel » et modèles inconnus plus
+bas sont historiques. Essais réels utilisateur via clé saisie au trousseau :
+WSS Voxtral et POST LLM réussis ; STT servi rapporté
+`voxtral-mini-transcribe-realtime-2602`, LLM servi `mistral-large-latest`.
+Le schéma D6 avec alternatives exclusives a été accepté : plusieurs réponses
+HTTP200 conformes, cinq modifications appliquées, aucun refus sur le dernier
+essai et résultat utilisateur concluant. Le catalogue complet du compte n’a
+pas été interrogé ; accès confirmé aux deux services essayés seulement.
+
+Aucun nouvel appel authentifié pendant les sondes natives de clôture. La sonde
+Secret Service utilise son propre namespace fictif puis supprime son entrée,
+sans charger la clé de l’application. Coût UI toujours inconnu, absence de
+bascule fournisseur et de réessai automatique conservée.
+
+Vérification publique du 2026-10-31 : [page de tarifs Mistral](https://mistral.ai/pricing/)
+et [centre des conditions](https://legal.mistral.ai/terms/get-started/) consultés.
+Le tarif générique Large affiché ne prouve pas le tarif historique ou celui de
+l’alias servi sur ce compte ; prix STT applicable, règles de facturation, coût
+effectif et conditions particulières de conservation restent inconnus.
+Aucune validation juridique du compte ni autorisation de données sensibles
+déduite de ces pages publiques. Recettes limitées aux données synthétiques.
+
+
 2026-10-30. Sources : research R02/R03/R09 et contrats du plan courant.
 **Aucun appel authentifié, compte, audio réel ou test payant exécuté.**
 Autorisation utilisateur reçue pendant ce lot : usage de la clé locale permis

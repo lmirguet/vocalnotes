@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prototype-key-presence"
+description = "Enables the prototype_key_presence command without any pre-configured scope."
+commands.allow = ["prototype_key_presence"]
+
+[[permission]]
+identifier = "deny-prototype-key-presence"
+description = "Denies the prototype_key_presence command without any pre-configured scope."
+commands.deny = ["prototype_key_presence"]

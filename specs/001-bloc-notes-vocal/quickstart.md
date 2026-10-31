@@ -1,5 +1,105 @@
 # Guide de validation — prototypes et jalons futurs
 
+**Mise à jour B08-ADAPTERS (sources).** La capture et la normalisation partagées
+se trouvent sous `src-tauri/src/audio/`, les adaptateurs Mistral sous `adapters/`.
+Les anciens chemins `platform/` sont des réexports de compatibilité. Aucun
+nouveau réglage ni fournisseur. Après une erreur ou un envoi annulé, le passage
+est abandonné sans réémission automatique. Une réponse LLM doit être complète,
+sans outil et conforme au schéma local avant toute édition. Les limites locales
+restent des paramètres d'ingénierie, pas des garanties de service.
+[Rapport](../../docs/validation/adapters-gnome.md). Binaire existant inchangé.
+
+**Recette des préférences B07 :** scénarios de fenêtre PASS utilisateur et disque :
+panneau, choix séparés, présence de clé, refus d'identifiant invalide,
+enregistrement et persistance après redémarrage. Modèles habituels rétablis,
+application ouverte ; aucun nouvel essai vocal. [Rapport](../../docs/validation/preferences-gnome.md).
+Les mentions B07 antérieures de recette/binaire en attente sont historiques.
+
+**Mise à jour B07-PREFERENCES (sources).** Après reconstruction native,
+ouvrir Édition → Préférences : choix Mistral séparés pour STT et LLM, identifiants
+intégrés suggérés et modèle personnalisé non vérifié. Enregistrer ne contacte
+aucun fournisseur. Les nouveaux réglages prennent effet à la prochaine nouvelle
+session explicite ; une reprise conserve la configuration suspendue. La clé est
+masquée, envoyée par une commande dédiée, puis le champ est vidé ; sa fermeture
+vide aussi une saisie non envoyée. Présence ne signifie pas accès au modèle.
+Préférences JSON dans le dossier applicatif de configuration fourni par Tauri,
+sans clé ni contenu de note ; dernière destination réellement sauvegardée mémorisée,
+sans ouverture automatique. Fichier invalide = erreur visible et vocal refusé,
+édition manuelle accessible. [Rapport](../../docs/validation/preferences-gnome.md).
+
+**Recette manuelle GNOME B05/B06 :** scénarios exercés PASS utilisateur et disque :
+affichage, édition/formatage/annulation, autosave, avertissement externe, copies
+de conflit, résolution et fermeture normale. Correctif d'affichage chargé et testé ;
+application fermée. [Preuves et limites](../../docs/validation/ipc-ui-gnome.md).
+Les mentions antérieures de recette/binaire en attente sont historiques.
+
+**Mise à jour B06-IPC-UI (sources).** L'entrée native utilise maintenant
+`DesktopShell`, avec menus Fichier/Édition/Aide, bandeau, note et état séparés.
+Les liens des notes restent du texte sans navigation ; les images ne sont pas
+chargées ; les blocs HTML/opaques restent littéraux. Le collage insère uniquement
+le texte brut, et le dépôt de contenu par glisser-déposer est désactivé.
+Mise en forme et saisie désactivées en vocal. Les commandes natives ont des
+permissions explicites limitées à la fenêtre principale ; aucun accès générique
+filesystem/shell/réseau n'est ajouté. [Preuves](../../docs/validation/ipc-ui-gnome.md).
+L'ancienne instance n'a pas été remplacée.
+
+**Mise à jour B05-STORAGE (sources, 2026-10-31).** Après reconstruction native,
+une note ouverte ou enregistrée vers une destination connue est autosauvegardée
+après chaque modification acceptée. « Enregistrer » utilise cette destination ;
+« Enregistrer sous » crée toujours un nouveau fichier exclusif. Les changements
+externes ne sont jamais importés automatiquement : un conflit garde les versions,
+les chemins de récupération et la note modifiée accessible. Pour le résoudre,
+choisir une nouvelle destination. Sans destination ou en cas d'échec, la fermeture
+est suspendue après arrêt/invalidation ; aucun redémarrage vocal automatique.
+Les descriptions de copies systématiques ci-dessous concernent l'ancien prototype.
+[Recette stockage](../../docs/validation/storage-gnome.md). Binaire actuel inchangé.
+
+**Bilan courant de validation locale, 2026-10-31 :** [preuves et matrice G02–G09](../../docs/validation/prototype-gnome-final.md).
+GNOME/Wayland uniquement, veille exclue par l’utilisateur, binaire direct sans
+nouveau paquet. Dictée/correction/arrière-plan/pause/verrouillage/enchaînement
+D6 PASS utilisateur. 74 Rust + 32 JS, build web/format, vrais fichiers (droits,
+écriture partielle, opaque), trousseau isolé et perte de connexion du moniteur
+GNOME PASS. Dernière recette visuelle opaque/copie/refus d’écrasement PASS utilisateur et
+comparaison d’octets PASS. T006/T007 cochées pour la tranche GNOME/Wayland
+convenue ; aucune certification Windows, veille, paquet ou fonction future.
+Les états plus anciens ci-dessous sont historiques ; ce bilan courant prévaut.
+
+
+## Reprise actuelle B04-GNOME — 2026-10-31
+
+L'utilisateur reprend T006/T007 sur Fedora 44 GNOME/Wayland, sans travail
+Windows et sans installation système supplémentaire. Binaire natif lancé depuis
+`/home/laurent/projects/vocalnotes/src-tauri/target/debug/vocalnotes`, interface
+embarquée sans Vite ; commencer par la recette manuelle, vocal non autorisé.
+67 tests Rust/31 JS, build frontend/typecheck/format et build natif PASS ;
+sondage natif GNOME/login1 PASS. Recette manuelle (paragraphes/formatage/undo, copie et nouvelle note) confirmée
+PASS par l’utilisateur ; écriture et présence de clé au trousseau confirmées.
+Micro NoMachine choisi ; premier essai vocal FAIL utilisateur : aucun texte.
+Diagnostic D1 ajouté/testé hors ligne : bilan des modifications, clarifications,
+refus et passages sans modification, conservé après arrêt sans transcription.
+D1 reconstruit et relancé après fermeture sûre confirmée. Pour le prochain essai,
+dicter du contenu dans la note existante ; ne pas demander « Crée une note »,
+car `new` n'est pas encore intégré au parcours vocal de cette tranche.
+Après essai D1 non concluant, D2 ajoute à la demande utilisateur une trace
+stderr technique et des niveaux audio numériques par seconde. L’agent relit
+la console de lancement (session outil D2 : 47020 ; démarrage confirmé) ;
+aucun texte de note/transcription/clé ni audio brut
+n’est journalisé. D2 prouve une réception audio non silencieuse et un final STT
+non vide ; le commit échoue sur Texte attendu absent. D3 corrige le schéma des
+notes vides (insert seul, ancre native exacte), 69 Rust ciblés PASS ; chargement
+effectué après fermeture D2 code0, relance D3 session45903. Première dictée D3
+PASS utilisateur et console (insert appliqué, aucun refus), arrêt micro confirmé.
+Correction et pause PASS utilisateur ; console replace appliqué, puis pause et
+fermeture micro confirmées. Essai arrière-plan FAIL : remplacement au lieu d’ajout.
+D4 renforce le prompt ; build PASS et chargé en session5444 après fermeture
+D3 code0. Retour D4 : correction réussie et idées fusionnées ; conservation
+rapportée, nuance et changement de fenêtre non certifiés. Évaluer la fidélité
+du contenu plutôt que le seul choix technique insert/replace. Ne pas utiliser un outil de capture audio ou lire le trousseau
+pour recopier ces données dans les preuves.
+Résultats et étapes : [rapport GNOME](../../docs/validation/prototype-gnome.md).
+Ne pas relancer/recompiler tant qu'une note peut être ouverte. Les instructions
+de priorité Windows et de report GNOME ci-dessous sont historiques.
+
 ## B03-OFFLINE — développement actuel, pas recette vocale
 
 T010 terminée et validée hors ligne : 67 Rust Linux, 64 Rust Windows ciblés
@@ -319,3 +419,28 @@ Pour prototype, fondations, US1, US2, US3, US4, US6, US7 et final : deux rapport
 Chaque rapport contient : date, version du binaire et des dépendances/modèles, matériel et OS/session, méthode, scénario/REQ, attendu, observé, statut PASS/FAIL/NON EXÉCUTÉ, limite et décision go/no-go. Les métriques comportent nombre d'observations et dispersion, début/fin des chronomètres et conditions réseau ; coût mesuré ou estimé avec source/date ou inconnu. Ne conserver ni vrai secret, audio, transcription ou conversation dans le rapport. Comparer les erreurs STT, compréhension et application séparément.
 
 Contrôle final : les **29 scénarios** S1.1–S1.4, S2.1–S2.5, S3.1–S3.4, S4.1–S4.5, S6.1–S6.5, S7.1–S7.3 et S8.1–S8.3, ainsi que SC-001 à SC-007, sont recettés dans les jalons correspondants. Critères G02–G09 satisfaits pour le périmètre livré, revue G10 réalisée, constitution recontrôlée, limites macOS honnêtes. **À ce jour : aucune de ces recettes n'est passée ; cela ne remet pas le plan documentaire en ERROR.**
+
+Recette D4 suivante : réserve en arrière-plan PASS utilisateur ; fermeture
+code0. Même version relancée session4710, micro arrêté. Prochain test :
+verrouillage GNOME, contrôle arrêt micro et absence de reprise automatique.
+
+Verrouillage GNOME D4 PASS utilisateur/console session4710 : mode manuel,
+flux micro fermé, aucune auto-reprise observée. Prochaine recette : sauvegarde,
+démarrage explicite puis suspension/reprise ; retour manuel sans auto-reprise.
+La connexion NoMachine peut être interrompue par la suspension.
+
+Périmètre utilisateur actualisé : ne pas proposer de test de veille sur cet
+ordinateur ; exclu de la recette locale, non validé, sans blocage local.
+Poursuivre par trois passages distincts dans une même session vocale.
+
+Enchaînement D4 FAIL : réponses fournisseur hors contrat, aucun effet.
+D5 améliore message/diagnostics et consigne ; build PASS, chargé session56340
+après fermeture code0. Résultat réel non validé : reprendre trois passages
+distincts dans une même session. Veille exclue de la recette locale.
+
+D5 deuxième passage FAIL : clarify avec actions et sans message. D6 aligne
+le schéma JSON sur les invariants natifs (deux alternatives exclusives).
+D6 chargé session26421 après fermeture code0 et build PASS ; compatibilité
+fournisseur et enchaînement désormais PASS sur cet essai utilisateur/console
+(applied5, aucun refus, pause et fermeture micro confirmées). Session26421
+ouverte en pause ; autres gates T006/T007 encore à compléter.

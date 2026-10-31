@@ -46,8 +46,8 @@ fn ordered_intention_edit_save_writes_only_prevalidated_accepted_content() {
         .unwrap()
         .map(|p| p.unwrap().path())
         .collect();
-    assert_eq!(paths.len(), 2);
-    assert_eq!(std::fs::read_to_string(original).unwrap(), "avant");
+    assert_eq!(paths.len(), 1);
+    assert_eq!(std::fs::read_to_string(original).unwrap(), "après");
     assert!(
         paths
             .iter()

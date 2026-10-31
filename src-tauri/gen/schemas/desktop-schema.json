@@ -177,6 +177,126 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the preferences_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preferences-get",
+          "markdownDescription": "Enables the preferences_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preferences_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preferences-set",
+          "markdownDescription": "Enables the preferences_set command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-action",
+          "markdownDescription": "Enables the prototype_action command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_delete_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-delete-key",
+          "markdownDescription": "Enables the prototype_delete_key command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_finish_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-finish-close",
+          "markdownDescription": "Enables the prototype_finish_close command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_key_presence command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-key-presence",
+          "markdownDescription": "Enables the prototype_key_presence command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_manual command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-manual",
+          "markdownDescription": "Enables the prototype_manual command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_set_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-set-key",
+          "markdownDescription": "Enables the prototype_set_key command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prototype_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-snapshot",
+          "markdownDescription": "Enables the prototype_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the startup_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-startup-status",
+          "markdownDescription": "Enables the startup_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preferences_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preferences-get",
+          "markdownDescription": "Denies the preferences_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preferences_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preferences-set",
+          "markdownDescription": "Denies the preferences_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-action",
+          "markdownDescription": "Denies the prototype_action command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_delete_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-delete-key",
+          "markdownDescription": "Denies the prototype_delete_key command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_finish_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-finish-close",
+          "markdownDescription": "Denies the prototype_finish_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_key_presence command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-key-presence",
+          "markdownDescription": "Denies the prototype_key_presence command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_manual command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-manual",
+          "markdownDescription": "Denies the prototype_manual command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_set_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-set-key",
+          "markdownDescription": "Denies the prototype_set_key command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-snapshot",
+          "markdownDescription": "Denies the prototype_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the startup_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-startup-status",
+          "markdownDescription": "Denies the startup_status command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

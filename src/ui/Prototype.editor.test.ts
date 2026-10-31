@@ -131,7 +131,7 @@ it("refus natif récupère toute la projection rapide sans envoyer la suite ni p
   e.app.view.focus(); e.enter(); e.type("deux");
   e.reject(); e.pending[0]!();
   await vi.waitFor(() => expect(e.root.textContent).toContain("aucun rejeu"));
-  expect(e.root.querySelector("pre[aria-label]")!.textContent).toBe("un\n\ndeux");
+  expect(e.root.querySelector('pre[aria-label="Saisie non acceptée récupérable en mémoire"]')!.textContent).toBe("un\n\ndeux");
   expect(e.snapshot().source).toBe("un");
   expect(e.app.view.hasFocus()).toBe(true);
   expect(e.invoke.mock.calls.filter(c => c[0] === "prototype_manual")).toHaveLength(1);
