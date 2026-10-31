@@ -1,0 +1,1094 @@
+batch_id: B03-OFFLINE
+latest_attempt: B03-OFFLINE
+historical_sections: "Les champs racines actuels et latest_batch B03-OFFLINE font autorité. Toutes les sections B01/B02 sont historiques, y compris attentes de relink/PID/consentement et T010 partielle. Contexte de reprise : diagnostic STT Windows HTTP1.0/307 sous TLS vérifié, filtrage corporate probable, aucune redirection suivie ; pas de nouvelle recette."
+status: partial
+date: "2026-10-31"
+scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010]
+completed_tasks: [T001, T002, T003, T004, T005, T008, T009, T010]
+partial_tasks: [T006]
+latest_batch:
+  batch_id: B03-OFFLINE
+  status: completed-bounded-unit
+  scope: [T010]
+  completed_tasks: [T010]
+  not_started_tasks: [T011, T012, T013]
+  scope_boundary: "Arrêt après T010 complète. T011 autorisée sous dérogation, non commencée, pas bloquée par T010. T012 dépend T009/T011 ; T013 dépend T012. Pas de stockage/race/remplacement Windows partiellement implémenté ou certifié."
+  gate_exception: "Développement et tests hors ligne autorisés malgré T007 ; pas de certification ou recettes API/micro/GNOME."
+  implementation:
+    contract: "Status/Interruption/SessionCommand typés, contexte typé, edit.operation insert/replace/delete/move, target/anchor avec block_id native ; aucun offset/enveloppe fourni par le modèle."
+    guards: "Prévalidation entière, occurrence UTF8 unique (y compris chevauchements), opaque/absence/structure/ancre périmée refusées ; offsets calculés par le cœur, IDs suivent décalages, copie de travail puis un seul publish."
+    available_voice_commands: [pause, stop, manual, save-exclusive-copy]
+    unavailable_voice_commands: [new, open, save_as, preferences, close]
+    unavailable_policy: "Types/schéma formalisés, refus natif statique avant tout effet ; prompt conforme. Intégration ultérieure T024 ; aucune action indisponible simulée comme succès."
+    byte_limits: {reply: 65536, message: 4096, intention: 4096, path: 4096, block_id: 128, actions: 32}
+    canonical_manual_and_undo: "Inchangés, régressions U2 PASS ; patch/projection/acquittement toujours dans l'autorité existante."
+    storage: "Copies exclusives et fermeture du prototype conservées. T011/T012/T013 NON COMMENCÉES : aucun autosave/watch/conflit/remplacement atomique ajouté."
+  tdd:
+    initial_command: "cargo test --offline --locked --manifest-path src-tauri/Cargo.toml --test interpreter_operations"
+    initial_red: {passed: 2, failed: 9, total: 11, exit_code: 101}
+    completed_tests: {interpreter_operations: 15, session_ports: 6, newly_added: 16}
+    additional_red: "Test de champs inconnus sur SessionCommand unit Serde accepté à tort ; variantes structurées vides corrigées, test vert pour toutes les commandes sans paramètre."
+  synchronization:
+    copy: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01'
+    distinct_allowlisted_files: 14
+    method: "Diffs ciblés vérifiés, SHA256 baseline avant copie, nouvel example/test créés exclusivement ; parité finale contrôlée."
+    conflicts: 0
+    secrets_env_real_notes_dependencies_linux_targets_or_exe_copied: false
+  runtime:
+    app_stopped_replaced_relinked_or_started: false
+    application_executable_hash_unchanged: true
+    proof: "FileShare.Read protège l'exe contre écriture/suppression durant les tests ; hash avant/après identique, finally libère le handle."
+    running_code: "Ancien binaire, changements T010 NON CHARGÉS."
+    user_reported_pid: 22548
+    pid_reprobed_by_agent: false
+  corrected_failures:
+    - "Première tentative OfflineTests : cargo rustc --test interpreter_operations tente de retirer l'exe application ; refus OS32/101 grâce à la garde, script exit1 ; aucune modification/exécution de l'exe."
+    - "Remédiation : example offline_contract_tests réutilise les huit fichiers de tests, cargo test --example ne cible pas le binaire GUI ; 55 tests MSVC PASS."
+    - "Commande python absente code127 ; reprise avec python3 existant, aucune installation."
+  boundaries:
+    provider_calls: 0
+    microphone_started: false
+    network_smoke_or_probe: false
+    keyring_or_root_key_or_attachment_or_real_note_read: false
+    tls_proxy_filter_bypass: false
+    manifests_locks_dependencies_system_or_constitution_changed: false
+    helpers_or_detached_services_started: 0
+    git_initialized_or_committed: false
+    constitution_sha256: 50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc
+  hooks: {before: "SKIPPED extensions.yml absent", after: "SKIPPED extensions.yml absent"}
+files_changed:
+  T010:
+    - {file: src-tauri/src/ports/interpreter.rs, change_type: modified, description: "Contrats/schéma typés, champs inconnus et seuils rejetés."}
+    - {file: src-tauri/src/domain/note.rs, change_type: modified, description: "Candidats natifs et résolution ordonnée sur copie de travail, même autorité."}
+    - {file: src-tauri/src/platform/controller.rs, change_type: modified, description: "Contexte typé sans offsets et interruption typée ; cleanup existant."}
+    - {file: src-tauri/src/platform/mistral.rs, change_type: modified, description: "Réutilisation des ports et prompt aligné aux capacités réelles, aucun appel."}
+    - {file: src-tauri/tests/interpreter_operations.rs, change_type: created, description: "15 tests déterministes opérations/préconditions/ambiguïté/barrières/seuils."}
+    - {file: src-tauri/tests/session_ports.rs, change_type: modified, description: "6 tests ports/objets stricts/STT seuils."}
+    - {file: src-tauri/tests/session_validity.rs, change_type: modified, description: "Fixtures typées, invariants U1 et sessions conservés."}
+    - {file: src-tauri/tests/prototype_contracts.rs, change_type: modified, description: "Fixtures typées, cleanup exclusivement sur répertoire temporaire créé par le test."}
+    - {file: src-tauri/tests/prototype_ordered_save.rs, change_type: modified, description: "Ton→édition→save sur vraie copie synthétique, même comportement."}
+    - {file: src-tauri/tests/prototype_pipeline.rs, change_type: modified, description: "Fixtures typées, barrières/capture/fermeture existantes."}
+    - {file: src-tauri/tests/prototype_envelope.rs, change_type: modified, description: "Status typé, consommation et ordre inchangés."}
+    - {file: src-tauri/tests/prototype_services.rs, change_type: modified, description: "Interruption typée, fixture undo conforme à la nouvelle enveloppe."}
+    - {file: src-tauri/examples/offline_contract_tests.rs, change_type: created, description: "Harnais réutilisant les vrais fichiers de tests sans relink GUI."}
+    - {file: tooling/windows-native.ps1, change_type: modified, description: "OfflineTests borné sans installation, garde exe et harnais example."}
+    - {file: specs/001-bloc-notes-vocal/tasks.md, change_type: modified, description: "T010 cochée, limites et point d'arrêt explicites."}
+    - {file: specs/001-bloc-notes-vocal/plan.md, change_type: modified, description: "Contrat réellement exécuté et dépendances inchangées."}
+    - {file: specs/001-bloc-notes-vocal/quickstart.md, change_type: modified, description: "Commande hors ligne sûre, limites de certification."}
+    - {file: specs/001-bloc-notes-vocal/batch-report.yaml, change_type: modified, description: "Résultats actuels séparés de l'historique."}
+    - {file: specs/001-bloc-notes-vocal/checkpoints/tasks-to-impl.yaml, change_type: modified, description: "Trace T010 complète, T011+ non commencées."}
+    - {file: docs/validation/prototype-windows.md, change_type: modified, description: "Preuves MSVC hors ligne, exe conservé, pas nouvelle recette."}
+upstream_artifacts_consumed:
+  T010:
+    - {artifact: tasks.md, used_for: "Ordre T009→T010, bornage et prédécesseurs stockage."}
+    - {artifact: plan.md, used_for: "Contrat cibles/opérations, préconditions natives et copie de travail."}
+    - {artifact: spec.md, used_for: "REQ005/006/007/015/017/032/039 et U1/U2/U3."}
+    - {artifact: batch-report.yaml, used_for: "Ports déjà extraits et limites du prototype, historique conservé."}
+    - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "T008/T009 achevées, T010 partielle avant ce lot."}
+    - {artifact: research.md, used_for: "R02/R03 finalité done et json_schema strict, aucun service essayé."}
+    - {artifact: quickstart.md, used_for: "Contraintes recette/copies/fermeture sans perte."}
+    - {artifact: ../../.specify/memory/constitution.md, used_for: "Gouvernance approuvée inchangée."}
+    - {artifact: ../../docs/validation/prototype-windows.md, used_for: "Transport bloqué et protection de la fenêtre actuelle."}
+evidence_mapping:
+  T010:
+    - {upstream: "plan.md#Port interprétation et intentions multiples", output: src-tauri/src/ports/interpreter.rs, evidence: "interpreter_operations 15 + session_ports 6 tests PASS Linux/MSVC."}
+    - {upstream: "spec.md#REQ005/006/007/017", output: src-tauri/src/domain/note.rs, evidence: "Préconditions/cible ambiguë/structure/opaque/ordre sans effet, sessions actuelles vs anciennes, véritables octets CRLF hors cible."}
+    - {upstream: "spec.md#U2/REQ014", output: src-tauri/tests/prototype_contracts.rs, evidence: "Acquittements/undo/refus conservés ; 31 JS Linux/Windows PASS, aucune nouvelle recette WebView."}
+traceability:
+  - {requirement: REQ-005, plan_item: "2.1", task: T010, status: contract-completed-runtime-unverified}
+  - {requirement: REQ-015, plan_item: "2.1", task: T010, status: typed-no-voice-history}
+  - {requirement: REQ-017, plan_item: "2.1", task: T010, status: native-envelope-and-target-guards-tested}
+  - {requirement: REQ-032, plan_item: "2.1", task: T010, status: typed-interruption-tested-runtime-unverified}
+  - {requirement: REQ-039, plan_item: "2.1", task: T010, status: independent-typed-ports-reused}
+test_results:
+  T010:
+    linux:
+      command: "cargo test --offline --locked --manifest-path src-tauri/Cargo.toml --lib --tests"
+      passed: 67
+      failed: 0
+      skipped: 0
+      exit_code: 0
+      suites: {lib: 9, interpreter_operations: 15, prototype_audio: 3, prototype_contracts: 11, prototype_envelope: 1, prototype_ordered_save: 2, prototype_pipeline: 9, prototype_services: 4, session_ports: 6, session_validity: 7}
+      zero_runtime_tests: [main, windows_lifecycle_types]
+    windows:
+      command: "pwsh.exe -NoProfile -File C:\\Users\\lmirguet\\Development\\vocalnotes-native-B02-W01\\tooling\\windows-native.ps1 -Action OfflineTests"
+      passed: 64
+      failed: 0
+      skipped: 0
+      exit_code: 0
+      suites: {lib: 9, example_shared_suites: 55}
+      scope: "Les mêmes huit fichiers d'intégration exécutés dans le harnais example ; prototype_audio non rejoué Windows, pas de 67/67 Windows annoncé."
+    javascript_linux: {command: "npm test", passed: 31, failed: 0, skipped: 0, exit_code: 0}
+    javascript_windows: {command: "npm test via OfflineTests", passed: 31, failed: 0, skipped: 0, exit_code: 0}
+    typecheck_linux: {command: "npm run typecheck", result: PASS}
+    rust_format_linux_windows: PASS
+    rust_check_linux: {command: "cargo check --offline --locked --manifest-path src-tauri/Cargo.toml --tests", result: PASS}
+    rust_check_windows: {command: "cargo +1.99.1 check --offline --locked --manifest-path src-tauri/Cargo.toml --lib --features tauri/custom-protocol", result: PASS}
+    application_link_build: NON_EXECUTE
+    frontend_build: "Non rejoué, aucune UI/manifest modifiée ; typecheck et tests actuels PASS."
+    coverage: "Non mesurée, aucun seuil revendiqué ; 16 tests ajoutés, harnais non additionné une seconde fois aux 67 Linux."
+warnings:
+  - "T006 partielle/T007 ouverte, GNOME différée et vocal bloqué ; aucun GO desktop ou fournisseur."
+  - "T011/T012/T013 non commencées, stockage exclusif actuel conservé ; courses/permissions/ReplaceFile Windows non validés par ce lot."
+  - "Node Windows25.8.2 hors plage22, aucun changement de dépendance."
+  - "Code actuel compilé/testé, mais non chargé dans la fenêtre existante."
+native_voice_preparation:
+  attempt_id: B02-W04
+  recorded_at: "2026-10-31T02:23:00+01:00"
+  status: ready-awaiting-explicit-consent-and-user-keyring-result
+  scope: [T006, T007]
+  completed_tasks: []
+  completed_subwork: [current-context-loaded, native-wts-preflight, readonly-microphone-permission-check, source-copy-parity, native-window-ready, graduated-recipe-documented]
+  manual_W03_authoritative_update:
+    user_statement_at: "2026-10-31T02:20:00+01:00"
+    user_statement: "OK, les tests sont concluants"
+    covered: [enter-two-paragraphs-focus, exclusive-markdown-copy, new-note]
+    result: PASS
+    menu_bar: "PASS utilisateur à01:57"
+    final_application_link_build: "PASS MSVC tauri/custom-protocol code0, tour précédent"
+    previous_process: {pid: 19624, shell_id: windows-ui-editing, exit_code: 0}
+    does_not_cover: [voice, real-keyring, microphone, providers, os-events, GNOME]
+  preflight:
+    lifecycle:
+      command: "pwsh.exe -NoProfile -File C:\\Users\\lmirguet\\Development\\vocalnotes-native-B02-W01\\tooling\\windows-native.ps1 -Action Probe"
+      host: x86_64-pc-windows-msvc
+      rust: 1.99.1
+      visual_studio: 18.11.3
+      sdk: 10.0.26100.0
+      result: PASS
+      exit_code: 0
+      output: "Surveillance OS initialisée ; ceci ne certifie pas les événements lock/suspend."
+      microphone_keyring_provider_used: false
+    microphone_permission:
+      method: "PowerShell lecture ciblée Value uniquement, ConsentStore/microphone HKCU/HKLM/HKCU NonPackaged"
+      values: [Allow, Allow, Allow]
+      exit_code: 0
+      writes_or_capture: false
+      runtime_audio_result: NON_EXECUTE
+    parity:
+      result: PASS
+      files: [src/ui/Prototype.ts, src-tauri/src/platform/controller.rs, src-tauri/src/platform/capture.rs, src-tauri/src/platform/secrets.rs, src-tauri/src/platform/lifecycle_windows.rs, tooling/windows-native.ps1]
+    product_bug_found: false
+    installation_manifest_or_code_change: false
+    regression_suites_this_attempt: NOT_RERUN
+    previous_W03_evidence: "31 JS/46 Rust Linux et Windows, typecheck/build/check PASS ; pas de nouveau résultat de suite inventé."
+  active_window:
+    application_version: W03-corrected
+    absent_before_launch: true
+    executable: "C:\\Users\\lmirguet\\Development\\vocalnotes-native-B02-W01\\src-tauri\\target\\debug\\vocalnotes.exe"
+    started_at: "2026-10-31T02:22:50+01:00"
+    pid: 16144
+    hwnd: 658332
+    title: Bloc-notes vocal
+    responding: true
+    shell_id: windows-voice-recipe
+    mode: owned-foreground-script-detached-tool-session
+    preserved_for_user: true
+    vite_or_start_process: false
+    bytes: 32254976
+    executable_written_at: "2026-10-31T02:14:28+01:00"
+    sha256: CC67C1CCC3E1917E3086A00F2C1FA062A514E5D23E0549064B5E49A52FC25923
+    proof_limit: "GUI title/handle/responding only ; pas pixels, capture ni modèle runtime."
+  consent:
+    status: awaiting-user
+    received: false
+    ask_user_available: false
+    next_action: "Demander accord contextualisé en chat, puis confirmation présence/masquage/trousseau avant Démarrer."
+    proposed_duration_seconds_max: 30
+    automatic_product_timer: false
+    data_disclosure: "Audio à Voxtral realtime ; finalisés/intention/sections éditables à Mistral Large ; provisoires à Mistral pour interruptions prioritaires supplémentaires."
+    cost: unknown-potentially-nonzero
+    provider_tariffs_retention: unverified
+    sensitive_or_third_party_speech_allowed: false
+    key_policy: "Ancienne clé exposée interdite ; utilisateur révoque/génère nouvelle clé et saisit uniquement champ masqué → Credential Manager, champ vidé. Aucun chat/env/CLI/fichier/import."
+  runtime_recipe_results:
+    keyring: NON_EXECUTE
+    microphone: NON_EXECUTE
+    mistral: NON_EXECUTE
+    first_passage: NON_EXECUTE
+    simple_modification: NON_EXECUTE
+    pause_stop: NON_EXECUTE
+    lock_suspend: NON_EXECUTE
+    GNOME: DEFERRED_NON_EXECUTE
+  files_changed:
+    T006: [../../docs/validation/prototype-windows.md, ../../docs/validation/environments.md, quickstart.md, tasks.md, plan.md, batch-report.yaml, checkpoints/tasks-to-impl.yaml]
+  upstream_artifacts_consumed:
+    T006:
+      - {artifact: tasks.md, used_for: "T006/T007 uniquement ; dépendances et exception GNOME inchangées"}
+      - {artifact: plan.md, used_for: "Ordre surveillance/keyring/capture et invariants U1/U2/U3"}
+      - {artifact: spec.md, used_for: "REQ028/032/033/035/040/041/045/050"}
+      - {artifact: batch-report.yaml, used_for: "Résultats précédents distincts de recette runtime"}
+      - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "Cases partiellement réalisées, aucune certification"}
+      - {artifact: "../../docs/validation/prototype-windows.md", used_for: "PASS manuel utilisateur actuel02:20 et limites"}
+      - {artifact: "../../docs/validation/environments.md", used_for: "Hôte natif Windows et outillage"}
+      - {artifact: quickstart.md, used_for: "Protocole graduel et sauvegarde sûre"}
+      - {artifact: research.md, used_for: "Données envoyées/modèles/tarifs inconnus"}
+      - {artifact: "../../.specify/memory/constitution.md", used_for: "Consentement/intégrité/confidentialité ; inchangée"}
+  evidence_mapping:
+    T006:
+      - {upstream: "plan.md#P1.6 ; REQ028/035", output: "../../docs/validation/prototype-windows.md", evidence: "probe_lifecycle MSVC code0 ; permissions lecture seule ; capture non exécutée"}
+      - {upstream: "spec.md#REQ040/041/045", output: "../../docs/validation/prototype-windows.md", evidence: "Code commandes/controller/secrets/UI lu ; présence seule par utilisateur et consentement à demander"}
+  traceability:
+    - {requirement: REQ-028, plan_item: "1.6", task: T006, status: preflight-ready-runtime-unverified}
+    - {requirement: REQ-035, plan_item: "1.6", task: T007, status: wts-initialization-only-events-unverified}
+    - {requirement: REQ-041, plan_item: "1.6", task: T006, status: user-keyring-recipe-awaiting}
+    - {requirement: REQ-045, plan_item: "1.6", task: T007, status: informed-consent-awaiting}
+  errors:
+    - "Première lecture permissions FAIL code1, syntaxe pipeline PowerShell ; corrigée, lecture seule finale code0. Aucun défaut produit."
+  warnings:
+    - "NodeWindows25.8.2 hors plage22 ; aucune installation."
+    - "Préflight WTS/GUI ne vaut pas recette micro/keyring/API/événements."
+    - "T006/T007 ouvertes, T010 partielle, GNOME différée, aucun GO."
+  protocol_violation: false
+  constitution_sha256: 50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc
+  secret_or_real_note_read: false
+  hooks: "extensions.yml absent ; before/after skipped"
+editor_file_correction:
+  attempt_id: B02-W03
+  status: corrected-tested-awaiting-user-safe-close-for-final-link-and-recipe
+  task: T006
+  plan_item: "1.6"
+  completed_tasks: []
+  completed_subwork: [root-cause-and-red-tests, bounded-source-fixes, linux-windows-regressions, targeted-sync-and-cargo-active-exe-guard]
+  blocked_subwork: [final-application-build-link, relaunch, interactive-Windows-recipe]
+  user_recipe:
+    current_datetime_input: "2026-10-31T02:01:38+01:00"
+    observed_on: B02-W02
+    enter_focus_file_actions: FAIL
+    menu_bar_visual: "PASS utilisateur à 01:57 conservé"
+    corrected_runtime: NON_EXECUTE
+  root_causes:
+    - "Markdown serializer omet le paragraphe vide final ; diff prefix omet séparateur en insertion vide."
+    - "Ack structurel recrée EditorState/DOM et sélection initiale ; editable=false perd le focus."
+    - "Entrée après frappe en attente et saisie après structure pending étaient interdites."
+    - "Handlers Fichier atteignent IPC ; motifs de refus natifs masqués par catch générique puis polling."
+    - "Nouvelle note vide réussie sans message de succès distinct."
+  files_changed:
+    T006:
+      - {file: src/ui/Prototype.ts, change_type: modified, description: "Patches UTF-8 segmentaires et insertions vides, état/sélection PM conservés sur ack, file rapide et historique acquitté ; motifs Fichier exacts expurgés/persistants."}
+      - {file: src/ui/Prototype.editor.test.ts, change_type: created, description: "Six tests Entrée réel keymap PM/focus/selection, rapide/undo/redo, refus, UTF-8/opaque/CRLF/polling, clics Fichier et réponses."}
+      - {file: src-tauri/src/domain/note.rs, change_type: modified, description: "Message explicite après Nouvelle note réussie ; protections et invalidation inchangées."}
+      - {file: src-tauri/tests/prototype_contracts.rs, change_type: modified, description: "Deux nouveaux contrats natifs : paragraphes/UTF-8/undo/opaque et vrai fichier synthétique/refus/new identity."}
+      - {file: tooling/windows-native.ps1, change_type: modified, description: "Validate/Build refusés avant Cargo quand exe de cette copie actif ; aucun arrêt automatique."}
+  upstream_artifacts_consumed:
+    T006:
+      - {artifact: tasks.md, used_for: "Bugfix T006 seulement, dérogation GNOME, pas autres fondations."}
+      - {artifact: plan.md, used_for: "Source canonique U2 et patches segmentaires, historique ack, U1/U3."}
+      - {artifact: spec.md, used_for: "S3 manuel classique, S4 fichiers/opaque, erreurs sans perte."}
+      - {artifact: batch-report.yaml, used_for: "État antérieur W02 et résultats historiques."}
+      - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "7 tâches achevées seulement, états partiels conservés."}
+      - {artifact: "../../docs/validation/prototype-windows.md", used_for: "Barre OK utilisateur, PID19316 et protection texte actuel."}
+      - {artifact: research.md, used_for: "R06/U2 priorité canonique, aucun serializer global."}
+      - {artifact: quickstart.md, used_for: "Chemins toolchain Linux et protocoles validation/fermeture."}
+      - {artifact: "../../.specify/memory/constitution.md", used_for: "II manuel classique, III intégrité ; inchangée."}
+  evidence_mapping:
+    T006:
+      - {upstream: "spec.md#S3 ; plan.md#Manuel/U2", output: src/ui/Prototype.ts, evidence: "6 nouveaux tests DOM/PM avec event Enter, sélection/focus après ack, file rapide, undo/redo, refus sans rejeu."}
+      - {upstream: "spec.md#S4.1/S4.2/S4.3 ; plan.md#U1/U2/U3", output: src-tauri/src/domain/note.rs, evidence: "11 contrats natifs PASS dont vraie copie synthétique octets exacts, refus d'écrasement, identité invalidée et ambiguïté zéro effets."}
+  traceability:
+    - {requirement: REQ-014, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts, src/ui/Prototype.editor.test.ts], status: corrected-prototype-partial}
+    - {requirement: REQ-019, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts], status: ephemeral-ack-history-preserved}
+    - {requirement: REQ-021, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts, src/ui/Prototype.editor.test.ts], status: paragraphs-and-file-actions-corrected-prototype-partial}
+    - {requirement: REQ-020, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts, src-tauri/src/domain/note.rs, src-tauri/tests/prototype_contracts.rs], status: corrected-prototype-partial}
+    - {requirement: REQ-022, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts, src-tauri/tests/prototype_contracts.rs], status: preservation-regressions-pass}
+    - {requirement: REQ-024, plan_item: "1.6", task: T006, files: [src-tauri/tests/prototype_contracts.rs], status: exclusive-copy-and-dirty-note-refusal-preserved}
+  test_results:
+    T006:
+      linux_js: {command: "npm test", passed: 31, failed: 0, skipped: 0, exit_code: 0}
+      windows_js: {command: "npm.cmd test Windows natif", passed: 31, failed: 0, skipped: 0, exit_code: 0}
+      linux_rust: {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --tests", passed: 46, failed: 0, skipped: 0, exit_code: 0}
+      windows_rust:
+        command: "Exécution directe des 9 exe tests MSVC distincts dans target/debug/deps, compilés 02:07–02:08 après sync"
+        suites: [vocalnotes_lib, prototype_audio, prototype_contracts, prototype_envelope, prototype_ordered_save, prototype_pipeline, prototype_services, session_ports, session_validity]
+        passed: 46
+        failed: 0
+        skipped: 0
+        exit_code: 0
+      targeted_native_contracts: {passed: 11, new_tests: 2, native_synthetic_file_byte_comparison: PASS}
+      frontend_typecheck_build_both_hosts: PASS
+      rust_fmt_linux_windows: PASS
+      linux_cargo_check_tests: PASS
+      windows_check_embedded_lib: {command: "cargo +1.99.1 check --locked --manifest-path src-tauri/Cargo.toml --lib --features tauri/custom-protocol", result: PASS, exit_code: 0}
+      final_application_build_link: NON_EXECUTE
+      coverage: "Pas de couverture chiffrée ; tests DOM avec transport déterministe ne certifient pas IPC Tauri/gestes WebView2."
+      jsdom_limitation: "Range sans géométrie ; seul scroll neutralisé, pas keyboard/transactions/selection/focus."
+  red_and_remediation:
+    - "4 nouveaux tests initiaux FAIL sur source antérieure, puis corrections."
+    - "Deux tests supplémentaires UTF-8/opaque ; correction fixture UTF-8 octets, neutralisation scroll jsdom manquant uniquement, 31/31 sans erreur non gérée."
+    - "Format Rust initial FAIL ; patches de format, fmt final PASS."
+    - "Commande sync initiale syntaxe Python FAIL avant copie ; version structurée avec baseline SHA-256 PASS."
+  errors:
+    - "windows-native.ps1 Validate : JS/build/fmt PASS, cargo test --tests FAIL101 en tentant de retirer exe actif, accès refusé Windows. Aucune fermeture/kill ; tests distincts ensuite exécutés réellement."
+  warnings:
+    - "Exe W02 inchangé et actif ; W03 non recetté, aucun nouveau succès runtime annoncé."
+    - "Node Windows25.8.2 hors cible22 inchangé ; pas installation."
+    - "GNOME différée, T006/T007 ouvertes et T010 partielle, aucun GO."
+  synchronization:
+    allowlist_count: 5
+    conflicts: 0
+    checksum_parity: PASS
+    files: [src/ui/Prototype.ts, src/ui/Prototype.editor.test.ts, src-tauri/src/domain/note.rs, src-tauri/tests/prototype_contracts.rs, tooling/windows-native.ps1]
+    final_sha256:
+      src/ui/Prototype.ts: "93f839067a0bfc7ce916b65bad54a0adf9f49c50e73859c06e1b4db785883fe8"
+      src/ui/Prototype.editor.test.ts: "715487c1880d60ee4f6963ed506956761a63c9cb501d39a0bbc950b5b80d3509"
+      src-tauri/src/domain/note.rs: "4fd58a8a45b835c10c1480013c745f1bd79c58e61581a0449fec3dd26269a198"
+      src-tauri/tests/prototype_contracts.rs: "cff54493952ae5406ea87451193f6c4f4591a4b9832ac8290fe053ee0efbca61"
+      tooling/windows-native.ps1: "bb0d19cc649281158060d8f1274a419363b59c15b977e2e4d6e5c0e55d1c3f00"
+    linux_target_dependencies_outputs_secrets_copied: false
+  active_runtime:
+    version: B02-W02
+    app_pid: 19316
+    shell_id: windows-ui-menus
+    detached: true
+    responding: true
+    main_window_title: Bloc-notes vocal
+    executable: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01\src-tauri\target\debug\vocalnotes.exe'
+    bytes: 32254976
+    last_write: "2026-10-31T01:56:23+01:00"
+    sha256: "634663A67E76C9CCD22BAA221F7125654EFF5733E82445D9092516E6D4E36099"
+    stopped_closed_or_replaced: false
+    W03_runtime_recipe: NON_EXECUTE
+  next_action: "Copier/récupérer texte actuel ou confirmer rien à garder ; accord explicite fermeture PID19316 et build/link/relaunch. Ne pas réutiliser ancien accord PID25360."
+  boundaries:
+    constitution_modified: false
+    constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+    secret_attachment_or_real_note_read: false
+    microphone_started: false
+    provider_calls: 0
+    keyring_access: false
+    system_or_project_dependencies_installed: false
+    global_path_modified: false
+    git_initialized_or_committed: false
+    silent_error_catch_or_global_markdown_serializer_added: false
+    tasks_T006_T007_T010_closed: false
+  protocol_violation: false
+  hooks: {before: "SKIPPED extensions.yml absent", after: "SKIPPED extensions.yml absent"}
+ui_menu_correction:
+  attempt_id: B02-W02
+  date: "2026-10-31"
+  scope: [T006, T007]
+  status: source-and-windows-check-pass-awaiting-safe-close-for-link
+  newly_completed_tasks: []
+  completed_subwork: "Correctif REQ-021/S4.5 : barre horizontale et panneaux DOM accessibles, tests exacts ; pas clôture de T006."
+  source: /home/laurent/projects/vocalnotes
+  windows_copy: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01'
+  files_changed:
+    T006:
+      - {file: src/ui/Prototype.ts, change_type: modified, description: "Boutons disclosure, panneaux exclusifs, Escape/action/clic extérieur/Tab, focus et nettoyage listeners."}
+      - {file: src/style.css, change_type: modified, description: "Flex horizontal nowrap, panneaux absolus superposés masqués, responsive."}
+      - {file: src/ui/Prototype.test.ts, change_type: modified, description: "Structure/actions uniques/CSS/interactions/focus/clavier et protections mode/acquittement."}
+  upstream_artifacts_consumed:
+    T006:
+      - {artifact: tasks.md, used_for: "Correctif tranche T006 seulement, T007 dérogée développement, T010 partielle."}
+      - {artifact: plan.md, used_for: "DOM natif WordPad, bandeau séparé, actions communes et deux modes."}
+      - {artifact: spec.md, used_for: "REQ-021/S4.5, REQ-014/015/017/028 ; pas de faux GO."}
+      - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "7 tâches achevées, états partiels préservés."}
+      - {artifact: research.md, used_for: "R01 DOM sans framework, pas menu OS."}
+      - {artifact: quickstart.md, used_for: "Arrêt après sauvegarde, limites du prototype."}
+      - {artifact: "../../docs/validation/prototype-windows.md", used_for: "Instance native existante, recette Windows guidée."}
+      - {artifact: "../../docs/validation/environments.md", used_for: "MSVC/Node Windows, GNOME différée."}
+      - {artifact: "../../.specify/memory/constitution.md", used_for: "Constitution approuvée inchangée."}
+  evidence_mapping:
+    T006:
+      - {upstream: "spec.md#REQ-021 / S4.5 ; plan.md#Éditeur visuel", output: src/ui/Prototype.ts, evidence: "13 tests prototype JS Windows/Linux PASS ; structure, interactions et CSS, pas rendu WebView2."}
+  traceability:
+    - {requirement: REQ-021, plan_item: "1.6", task: T006, files: [src/ui/Prototype.ts, src/style.css, src/ui/Prototype.test.ts], status: corrected-prototype-partial}
+  ui_design: "Disclosure HTML boutons/sections : Tab/Enter/Espace natifs, flèches/Home/End entre intitulés seulement ; pas rôles ARIA menu/menubar."
+  actions_preserved: [new, open, save, save-current, close, cancel-close, copy, undo, redo, toolbar, path-input, key-form]
+  synchronization:
+    allowlist_count: 3
+    original_windows_source_parity: PASS
+    conflicts: 0
+    final_sha256:
+      src/ui/Prototype.ts: "01a6725f23f9bf2f957d2266e9fe3fda0ae19faf36d046363be4a0a672a69150"
+      src/style.css: "4224c33137d8f8436f9dafba7f99a26e74bda168d3a779f68259ffa200f7e101"
+      src/ui/Prototype.test.ts: "27e53eccdd5d29814b3ecd16ef073d0e39b66927f18047a8f7fd9e7daa033303"
+    secrets_linux_outputs_or_root_copied: false
+  test_results:
+    T006:
+      linux: {command: "npm test", passed: 25, failed: 0, skipped: 0, exit_code: 0}
+      windows: {command: "npm test (node.exe/npm.cmd Windows)", passed: 25, failed: 0, skipped: 0, exit_code: 0}
+      prototype_tests: 13
+      frontend_typecheck_build_linux_and_windows: PASS
+      native_check: {command: "cargo +1.99.1 check --locked --manifest-path src-tauri/Cargo.toml --bin vocalnotes --features tauri/custom-protocol", host: x86_64-pc-windows-msvc, result: PASS, exit_code: 0}
+      native_link_build_new_executable: NON_EXECUTE
+      rust_tests: "Non rejoués, Rust inchangé ; 44 tests B02-W01 historiques."
+      coverage: "Non mesurée ; tests déterministes ne prouvent pas WebView2."
+  corrected_test_failures:
+    - "TDD : 3 tests UX rouges avant implémentation, verts après correction."
+    - "Test CSS : import ?raw neutralisé par Vitest ; lecture directe du seul style.css, rerun 25/25 PASS."
+  runtime:
+    version: B02-W01
+    shell_id: windows-ui
+    detached: true
+    app_pid: 25360
+    hwnd: 396550
+    responding: true
+    executable: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01\src-tauri\target\debug\vocalnotes.exe'
+    executable_sha256_unchanged: "1144BB8DA9C606C2D4FEC8804537AAD210BCB0337C483AE1C02F05C6AF8546B2"
+    user_prior_observation: "Fenêtre visible, disposition des anciens menus incorrecte."
+    new_webview2_render_or_interaction: NON_EXECUTE
+    relaunch: "Non exécuté : confirmation sauvegarde/fermeture propre nécessaire, ask_user non exposé après recherche."
+    force_stop_or_helper_stop: false
+    new_vite_or_wslg: false
+  errors: []
+  warnings:
+    - "Link/build nouvel exe et recette UI Windows en attente de fermeture propre ; ne pas prétendre que PID25360 utilise le correctif."
+    - "Node Windows25.8.2 hors cible22 ; résultats attribués à la version réelle."
+    - "GNOME différée NON EXÉCUTÉE, sans blocage du développement ; aucun GO T007."
+  boundaries:
+    rust_sources_or_protections_changed: false
+    constitution_modified: false
+    constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+    secret_or_attachment_read: false
+    microphone_started: false
+    provider_calls: 0
+    keyring_access_by_agent: false
+    system_or_project_packages_installed: false
+    global_path_modified: false
+    git_initialized_or_committed: false
+  protocol_violation: false
+  hooks: {before: "SKIPPED absent", after: "SKIPPED absent au contrôle final"}
+  next_action: "Obtenir confirmation sauvegarde/fermeture propre, vérifier PID absent, arrêter windows-ui si nécessaire, build/link MSVC et relancer natif ; puis recette UI sans micro/clé."
+blocked_tasks:
+  - task_id: T006
+    reason: "Tranche compilée/testée Linux et MSVC Windows, fenêtre Windows lancée et WTS initialisé ; micro/WSS/LLM/keyring/rotation/pause/cycle OS non recettés. GNOME différée."
+    required_task_ids: []
+  - task_id: T007
+    reason: "T006 partielle ; préparation/build/lancement Windows réels, recette interactive NON EXÉCUTÉE ; GNOME/Wayland différée, aucun GO."
+    required_task_ids: [T006]
+historical_foundations_B02:
+  batch_id: B02
+  date: "2026-10-31"
+  scope: [T008, T009, T010]
+  status: partial
+  completed_tasks: [T008, T009]
+  partial_tasks: [T010]
+  not_started_tasks: [T011, T012, T013]
+  gate_exception: "Décision utilisateur 2026-10-31 : développement/tests autorisés malgré T007 ; autres dépendances obligatoires, pas GO ni certification."
+  remaining:
+    T010: "Formaliser contrat complet cibles/insert/replace/delete/move/actions note-session. Port filaire actuel edit.patch et pause/stop/save terminal du prototype seulement ; ne pas considérer T010 terminée ni débloquer ses dépendances."
+  upstream_artifacts_consumed:
+    - {artifact: tasks.md, used_for: "Ordre T008→T009→T010 et dérogation T007, arrêt avant stockage."}
+    - {artifact: plan.md, used_for: "P2.1, une autorité native, barrière note/session/génération/revision/identités."}
+    - {artifact: spec.md, used_for: "REQ-005/007/014–019/032/039/046 ; invariants U1/U2/U3."}
+    - {artifact: design-review.md, used_for: "Assertions U1/U2/U3 ; ambiguïté zéro effet et absence de rejeu."}
+    - {artifact: research.md, used_for: "R02/R03 : done seulement et schéma strict natif, TLS inchangé."}
+    - {artifact: quickstart.md, used_for: "Toolchain utilisateur réelle, limites vocales et commande WSLg."}
+    - {artifact: "../../docs/validation/environments.md", used_for: "WSLg distinct de GNOME/Windows, refus surveillance."}
+    - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "T001–T005 complétées, T006 partielle et T007 ouverte."}
+    - {artifact: "../../.specify/memory/constitution.md", used_for: "Constitution approuvée inchangée, deux modes et confidentialité."}
+  evidence_mapping:
+    - {task: T008, upstream: "plan.md#P2.1 / U1", output: src-tauri/tests/session_validity.rs, evidence: "7 tests PASS, phase rouge domaine absent puis verte."}
+    - {task: T009, upstream: "plan.md#Priorité du cœur et U1/U2", output: src-tauri/src/domain/note.rs, evidence: "Sessions + anciens contrats/manuels/opaque/fermeture PASS."}
+    - {task: T010, upstream: "plan.md#Port STT / interprétation / U3", output: src-tauri/src/ports/interpreter.rs, evidence: "5 tests ports + 4 services PASS, couverture du seul contrat borné du prototype."}
+  traceability:
+    - {requirement: REQ-017, plan_item: "2.1", tasks: [T008, T009], status: completed-foundation}
+    - {requirement: REQ-018, plan_item: "2.1", tasks: [T008, T009], status: completed-foundation}
+    - {requirement: REQ-015, plan_item: "2.1", tasks: [T008, T009], status: completed-foundation}
+    - {requirement: REQ-032, plan_item: "2.1", tasks: [T008, T009], status: completed-foundation}
+    - {requirement: REQ-039, plan_item: "2.1", tasks: [T010], status: partial}
+    - {requirement: REQ-005, plan_item: "2.1", tasks: [T010], status: partial}
+  runtime:
+    environment: "Ubuntu 24.04 WSL2/WSLg, natif Linux dev"
+    command: "npm run tauri -- dev --no-watch (toolchain locale quickstart)"
+    detached: true
+    shell_id: wslg-ui
+    app_pid: 126037
+    vite_pid: 126008
+    tauri_node_pid: 125926
+    server: "http://127.0.0.1:1420"
+    http_status: 200
+    window_evidence: "Weston 01:03:31 CET : vocalnotes, fenêtre 0x6, association RDP WSLg."
+    visual_interaction: "NON EXÉCUTÉE, contenu écran non inspectable à distance."
+    running_code: "B01-R3 démarré avant lot ; B02 compilé/testé sans redémarrer ni interrompre l'utilisateur."
+    fatal_launch_error: false
+    graphics_warning: "EGL/Mesa : pilote fd -1 non identifié, ZINK pdev indisponible, dri2 non créé. App et WebKitWebProcess PID126247/WebKitNetworkProcess PID126155 toujours vivants, Vite HTTP200 ; rendu visuel non certifié, pas de contournement."
+    voice: "REFUSÉ faute surveillance native OS, guard avant keyring/CPAL intact."
+    windows_native: "NON EXÉCUTÉ"
+    gnome_wayland: "NON EXÉCUTÉ"
+    stop: "Fichier → Fermer après sauvegarde puis stop_bash shellId=wslg-ui ; pas d'arrêt par l'agent."
+  test_results:
+    rust: {passed: 44, failed: 0, skipped: 0, new_session_tests: 7, new_port_tests: 5}
+    js: {passed: 22, failed: 0, skipped: 0}
+    coverage: "Non mesurée ; invariants ciblés testés, aucune certification globale."
+  corrected_errors:
+    - "Régression intermédiaire is_current : contrôle mode ajouté à une fonction de prévalidation ; compatibilité restaurée, commit reste voice-only."
+    - "Raccord ports UFCS : référence mutable doublée, corrigée avant validations finales."
+    - "runTests ne découvre pas les tests Vitest, runner npm existant exécuté réellement."
+  boundaries:
+    microphone_started: false
+    provider_calls: 0
+    secret_file_read: false
+    system_installations: false
+    manifests_or_lockfiles_changed: false
+    security_bypass: false
+    constitution_modified: false
+    constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+    hooks: "before/after skipped : .specify/extensions.yml absent"
+  protocol_violation: false
+windows_preparation:
+  attempt_id: B02-W01
+  date: "2026-10-31"
+  status: prepared-built-launched-awaiting-user-recipe
+  scope: [T003, T005, T006, T007]
+  newly_completed_tasks: []
+  completed_tasks_unchanged: [T001, T002, T003, T004, T005, T008, T009]
+  partial_tasks_unchanged: [T006, T010]
+  not_started_tasks: [T011, T012, T013]
+  gate_exception: "Windows first ; GNOME différée non bloquante pour développement, autres dépendances obligatoires ; aucun GO multiplateforme."
+  source: /home/laurent/projects/vocalnotes
+  windows_copy: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01'
+  copy:
+    mode: exclusive-new-directory
+    verified_files: 55
+    final_source_copy_parity: PASS
+    source_snapshot_sha256: "2e1cf9bfc42be5191c6ddefdc4520a15b76ebba93d9bef264b903554f13b5135"
+    method: "tooling/copy-windows-source.py ; allowlist explicite, SHA-256 fichier par fichier"
+    included: [manifests, locks, config, src, native-src, tests, examples, capabilities, icons, windows-script, empty-env]
+    excluded: [secret-file, attachments, env-files, notes, node_modules-linux, target-linux, dist-linux, caches]
+    unknown_overwrites: false
+    mirrors_or_deletions: false
+  environment:
+    os: "Windows 11 Pro 10.0.26200 build 26200 (sondage natif préalable)"
+    powershell: '/mnt/c/Users/lmirguet/AppData/Local/Microsoft/WindowsApps/pwsh.exe'
+    rust: "1.99.1 (58cf8f9c3), x86_64-pc-windows-msvc"
+    cargo: "1.99.1 (5f94df478)"
+    cargo_bin: 'C:\Users\lmirguet\.cargo\bin'
+    visual_studio: "Build Tools 2026 18.11.3"
+    visual_studio_root: 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools'
+    cl: "19.51.36260 x64, MSVC 14.51.36231"
+    windows_sdk: "10.0.26100.0"
+    node: "25.8.2"
+    npm: "11.8.0"
+    node_root: 'C:\Program Files\nodejs'
+    webview2: "156.0.4314.50"
+    global_path_or_profile_changes: false
+    node_engine_deviation: "Node 25 hors >=22.23.2 <23 et plages de certaines dépendances ; EBADENGINE, résultats avec cette version seulement."
+    unexpected_toolchain_download: "rustup toolchain list depuis le projet UNC a auto-installé la toolchain épinglée 1.99.1 ; non intentionnel. Commandes suivantes RUSTUP_AUTO_INSTALL=0 et +1.99.1."
+    project_dependency_restore: "npm ci --no-audit --no-fund (105 paquets), dépendances Cargo Windows selon Cargo.lock."
+    system_tool_or_sdk_installations: false
+  upstream_artifacts_consumed:
+    - {artifact: tasks.md, used_for: "Priorité préparation T006/T007, dérogation GNOME, pas de nouveaux lots."}
+    - {artifact: plan.md, used_for: "Tauri natif, deux modes, U1/U2/U3, ressources locales, keyring."}
+    - {artifact: spec.md, used_for: "REQ-028/033/035/040/041/050/052 et recette sans fausse certification."}
+    - {artifact: quickstart.md, used_for: "Protocole A–K et limites sauvegarde exclusive/prototype."}
+    - {artifact: research.md, used_for: "TLS, STT/LLM indépendants, finalité done et schéma strict inchangés."}
+    - {artifact: checkpoints/tasks-to-impl.yaml, used_for: "7 tâches cochées, T006/T010 partielles, T007 ouverte."}
+    - {artifact: "../../docs/validation/environments.md", used_for: "Interop pwsh/MSVC natif et séparation WSLg/Windows/GNOME."}
+    - {artifact: "../../docs/validation/prototype-windows.md", used_for: "Gates Windows et rapport de recette."}
+    - {artifact: "../../.specify/memory/constitution.md", used_for: "Gouvernance approuvée, inchangée."}
+    - {artifact: "../../.github/agents/speckit.implement.agent.md", used_for: "Prérequis/checklists/ordre/ignore/hooks/progression."}
+  changes:
+    - {file: tooling/copy-windows-source.py, type: created, purpose: "Copie reproductible bornée exclusive, pas de secrets."}
+    - {file: tooling/windows-native.ps1, type: created, purpose: "Validate/Build/Probe/Run natifs, VS dev env process-local, pas de tool install implicite."}
+    - {file: tests/scaffold.test.ts, type: modified, purpose: "Chemin envDir natif exact via fileURLToPath/resolve, contrôle inchangé."}
+    - {file: docs/validation/prototype-windows.md, type: modified, purpose: "Preuves actuelles, commandes et guide interactif réel."}
+    - {file: docs/validation/environments.md, type: modified, purpose: "Versions réelles Windows, instance WSLg désormais fermée."}
+    - {file: specs/001-bloc-notes-vocal/quickstart.md, type: modified, purpose: "Priorité Windows, instance et arrêt après sauvegarde."}
+    - {file: specs/001-bloc-notes-vocal/tasks.md, type: modified, purpose: "Progression partielle, aucune nouvelle checkbox."}
+    - {file: specs/001-bloc-notes-vocal/plan.md, type: modified, purpose: "État d'exécution actuel sans changement de pile/deps."}
+    - {file: docs/validation/runtime-validation-report.md, type: created, purpose: "Verdict NEEDS_SIGNOFF, tests réutilisés et limites E2E/Node/OS."}
+  corrected_failures:
+    - {command: "npm test (premier Windows)", exit_code: 1, passed: 21, failed: 1, test: "frontières du scaffold > ne charge pas l'environnement ou les ressources publiques de la racine", cause: "Assertion séparateur / Linux", resolution: "Chemin natif exact dans test ; source et copie corrigées, rerun 22/22 PASS."}
+    - {command: "WaitForInputIdle(10000)", result: FAIL, resolution: "Sondage pendant démarrage ; contrôle stable ultérieur HWND/titre/réponse/enfant WebView2 PASS, pas de crash constaté."}
+  validation_commands:
+    - {command: "windows-native.ps1 -Action Build", result: PASS, exit_code: 0, native_host: x86_64-pc-windows-msvc}
+    - {command: "npm test (Windows)", result: PASS, exit_code: 0, passed: 22, failed: 0, skipped: 0}
+    - {command: "npm run build (Windows, inclut typecheck)", result: PASS, exit_code: 0}
+    - {command: "cargo +1.99.1 fmt --manifest-path src-tauri/Cargo.toml -- --check", result: PASS, exit_code: 0}
+    - {command: "cargo +1.99.1 test --locked --manifest-path src-tauri/Cargo.toml --tests", result: PASS, exit_code: 0, passed: 44, failed: 0, skipped: 0}
+    - {command: "cargo +1.99.1 check --locked --manifest-path src-tauri/Cargo.toml --tests", result: PASS, exit_code: 0}
+    - {command: "cargo +1.99.1 build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol", result: PASS, exit_code: 0}
+    - {command: "windows-native.ps1 -Action Probe", result: PASS, exit_code: 0, limit: "Initialisation WTS seulement, pas de lock/suspend."}
+    - {command: "Source Linux : npm test/build et cargo fmt/test --tests/check --tests/build --locked", result: PASS, exit_code: 0, rust_passed: 44, js_passed: 22}
+    - {command: "Python : YAML clés uniques, 60 IDs/7 cochées, égalité SHA-256 55 sources/copie, constitution", result: PASS, exit_code: 0}
+  runtime:
+    command: "pwsh.exe -NoProfile -NonInteractive -File tooling/windows-native.ps1 -Action Run"
+    shell_id: windows-ui
+    detached: true
+    app_pid: 25360
+    hwnd: 396550
+    title: "Bloc-notes vocal"
+    responding: true
+    webview2_child_pid: 9376
+    started_at: "2026-10-31T01:39:23.8326998+01:00"
+    executable: 'C:\Users\lmirguet\Development\vocalnotes-native-B02-W01\src-tauri\target\debug\vocalnotes.exe'
+    executable_bytes: 32254976
+    executable_sha256: "1144BB8DA9C606C2D4FEC8804537AAD210BCB0337C483AE1C02F05C6AF8546B2"
+    embedded_frontend: true
+    vite_server: false
+    visual_content_and_user_interaction: NON_EXECUTE
+    microphone_keyring_and_provider_recipe: NON_EXECUTE
+    nsis_installer: NON_EXECUTE
+    gnome_wayland: NON_EXECUTE_DEFERRED
+    previous_wslg: "Arrêtée avant cette reprise ; PIDs 126037/126008/125926 disparus selon preuve du tour précédent, aucune relance."
+    stop: "Fichier → Fermer après sauvegarde et acquittements ; helper windows-ui ensuite seulement. Stop-Process -Id 25360 en dernier recours après sauvegarde et contrôle du chemin."
+  verdict:
+    startup: "PASS — PID/HWND/titre/réponse/WebView2 réels ; contenu visuel non confirmé."
+    integration: "PASS — exit_code 0, 44 Rust et 22 JS existants ; tests réutilisés avec correction minimale, pas E2E."
+    e2e: "UNVERIFIED — exit_code null, recette interactive A–K non exécutée."
+    overall: "NEEDS_SIGNOFF — compilation/lancement réussis, T006/T007 non certifiées, Node Windows hors plage."
+    coverage: "Non mesurée."
+    next_action: "Utilisateur confirme fenêtre/menus/note/Manuel sans micro, puis recette graduée du guide."
+  boundaries:
+    secret_file_read: false
+    microphone_started: false
+    provider_calls: 0
+    keyring_access_by_agent: false
+    manifests_or_lockfiles_changed: false
+    security_bypass: false
+    constitution_modified: false
+    constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+    hooks: "before/after skipped : .specify/extensions.yml absent"
+    ignore_verification: "Pas Git/Docker/ESLint/Prettier/Terraform/Helm ni publication npm (private=true) ; .gitignore existant couvre Node/Rust/secrets/universels, inchangé."
+historical_validation_commands_B02:
+  - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --tests", result: PASS, passed: 44, failed: 0, exit_code: 0}
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml --tests", result: PASS, exit_code: 0}
+  - {command: "cargo build --locked --manifest-path src-tauri/Cargo.toml", result: PASS, exit_code: 0}
+  - {command: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check", result: PASS, exit_code: 0}
+  - {command: "npm test -- src/ui/Prototype.test.ts src/ui/Startup.test.ts tests/scaffold.test.ts", result: PASS, passed: 22, failed: 0, exit_code: 0}
+  - {command: "npm run typecheck", result: PASS, exit_code: 0}
+  - {command: "npm run build", result: PASS, exit_code: 0}
+  - {command: "curl http://127.0.0.1:1420/", result: PASS, http_status: 200}
+  - {command: "probe_lifecycle", result: UNAVAILABLE, exit_code: 2, note: "Surveillance native indisponible ; aucun micro/trousseau/API."}
+  - {command: "Python : YAML sans doublons/60 IDs/7 tâches cochées/fichiers présents/SHA-256 constitution", result: PASS, exit_code: 0}
+historical_files_changed_B02:
+  T008:
+    - {file: src-tauri/tests/session_validity.rs, change_type: created, description: "7 tests TDD sessions, reprise, périmé, doublons/ordre, note identique, open/reopen/échec et zéro undo/rejeu."}
+  T009:
+    - {file: src-tauri/src/domain/note.rs, change_type: created, description: "Autorité canonique déplacée depuis probe.rs, aucune duplication ; conflit visible au commit."}
+    - {file: src-tauri/src/domain/session.rs, change_type: created, description: "Session/Ticket avec identités privées et barrière one-shot sous mutex natif."}
+    - {file: src-tauri/src/domain/mod.rs, change_type: created, description: "Modules domaine."}
+    - {file: src-tauri/src/platform/probe.rs, change_type: modified, description: "Façade compatible réexportant Note comme Probe."}
+    - {file: src-tauri/src/lib.rs, change_type: modified, description: "Export domaine et ports."}
+  T010:
+    - {file: src-tauri/src/ports/stt.rs, change_type: created, description: "Ports PCM/input/output distincts et finalité extraite, modèle servi non vide."}
+    - {file: src-tauri/src/ports/interpreter.rs, change_type: created, description: "Port LLM et types/validation/schéma strict extraits ; contrat prototype encore borné, tâche partielle."}
+    - {file: src-tauri/src/ports/mod.rs, change_type: created, description: "Modules ports."}
+    - {file: src-tauri/tests/session_ports.rs, change_type: created, description: "5 tests TDD strict nested objects/ambiguïté/priorité/finalité/implémentation des ports."}
+    - {file: src-tauri/src/platform/mistral.rs, change_type: modified, description: "Réutilisation unique des décodeurs/finalité et implémentation des ports sans nouveau transport."}
+    - {file: src-tauri/src/platform/controller.rs, change_type: modified, description: "Pipeline existant invoque les ports, lifecycle/CPAL restent inchangés."}
+  T001:
+    - {file: specs/001-bloc-notes-vocal/design-review.md, change_type: created, description: "Décisions retenues et Q01."}
+  T002:
+    - {file: docs/validation/provider-check.md, change_type: created, description: "Contrats et protocole fournisseur, autorisation mise à jour sans appel."}
+  T003:
+    - {file: docs/validation/environments.md, change_type: created, description: "État WSL2, outils et prérequis manquants ; deux OS non établis."}
+  T004:
+    - {file: specs/001-bloc-notes-vocal/design-review.md, change_type: modified, description: "Contrats U1/U2/U3 et assertions C1, erreurs/menus sans succès factice."}
+  T005:
+    - {file: .gitignore, change_type: created, description: "Secrets et sorties exclus, pas de Git init."}
+    - {file: .node-version, change_type: created, description: "Node 22.23.2."}
+    - {file: rust-toolchain.toml, change_type: created, description: "Toolchain 1.99.1 exacte."}
+    - {file: package.json, change_type: created, description: "Pile DOM/ProseMirror, scripts build/test/typecheck/tauri."}
+    - {file: package-lock.json, change_type: created, description: "Résolution npm."}
+    - {file: tsconfig.json, change_type: created, description: "Types stricts."}
+    - {file: vite.config.ts, change_type: created, description: "Build dist seulement, pas de public/ ou .env racine."}
+    - {file: vitest.config.ts, change_type: created, description: "Tests ciblés hors réseau fournisseur."}
+    - {file: tooling/empty-env/.gitkeep, change_type: created, description: "Répertoire d'environnement Vite vide."}
+    - {file: index.html, change_type: created, description: "Entrée locale française."}
+    - {file: src/main.ts, change_type: created, description: "Bootstrap DOM avec détection Tauri."}
+    - {file: src/style.css, change_type: created, description: "Styles locaux."}
+    - {file: src/ui/Startup.ts, change_type: created, description: "Écran de socle non éditable, distinction web/natif/indisponible."}
+    - {file: src/ui/Startup.test.ts, change_type: created, description: "9 cas de démarrage/IPC/erreur expurgée, écrits avant composant."}
+    - {file: tests/scaffold.test.ts, change_type: created, description: "3 cas scripts, configuration Vite et permissions/CSP."}
+    - {file: src-tauri/Cargo.toml, change_type: created, description: "Rust 2024, dépendances Tauri exactes."}
+    - {file: src-tauri/Cargo.lock, change_type: created, description: "406 paquets, résolution réelle."}
+    - {file: src-tauri/build.rs, change_type: created, description: "Build Tauri standard."}
+    - {file: src-tauri/tauri.conf.json, change_type: created, description: "RPM/NSIS configurés, non construits ; CSP et fenêtre unique."}
+    - {file: src-tauri/icons/app.svg, change_type: created, description: "Icône vectorielle originale."}
+    - {file: src-tauri/icons/32x32.png, change_type: created, description: "PNG généré par outil Tauri existant."}
+    - {file: src-tauri/icons/128x128.png, change_type: created, description: "PNG généré par outil Tauri existant."}
+    - {file: src-tauri/icons/icon.ico, change_type: created, description: "ICO généré pour ressource Windows, sans recette Windows."}
+    - {file: src-tauri/capabilities/main.json, change_type: created, description: "Pas de permissions fs/shell/réseau/notifications."}
+    - {file: src-tauri/src/lib.rs, change_type: created, description: "Commande de statut sans effet de bord ; un test Rust non exécuté."}
+    - {file: src-tauri/src/main.rs, change_type: created, description: "Entrée native."}
+  T006:
+    - {file: src-tauri/src/platform/probe.rs, change_type: created, description: "Canonique, patches locaux, opaque, générations, ack, prévalidation entière, sauvegarde exclusive et fermeture protégée."}
+    - {file: src-tauri/src/platform/secrets.rs, change_type: created, description: "Keyring 3.6.3 réel, erreurs expurgées, aucun fallback ; intégration OS non exercée."}
+    - {file: src-tauri/src/platform/mistral.rs, change_type: modified, description: "TLS natif raccordé, WSS duplex, done seulement, strict schema/save/priorité ; zéro appel réel."}
+    - {file: src-tauri/src/platform/audio.rs, change_type: created, description: "Downmix/rubato 16kHz et VAD WebRTC testés synthétiquement, bornes explicites."}
+    - {file: src-tauri/src/platform/capture.rs, change_type: modified, description: "CPAL compilé avec ALSA ; stop dès init/callback, anneau et files bornés ; aucun micro ouvert."}
+    - {file: src-tauri/src/platform/mod.rs, change_type: created, description: "Modules réutilisables du prototype."}
+    - {file: src-tauri/src/app/commands.rs, change_type: created, description: "Registre d'actions typées, propositions manuelles, IPC secret séparé."}
+    - {file: src-tauri/src/app/mod.rs, change_type: created, description: "Entrée app."}
+    - {file: src-tauri/src/lib.rs, change_type: modified, description: "État natif et protection de fermeture, aucun démarrage audio automatique."}
+    - {file: src-tauri/Cargo.toml, change_type: modified, description: "Dépendances natives réelles ajoutées, backends keyring explicites, pas de feature de contournement."}
+    - {file: src-tauri/Cargo.lock, change_type: modified, description: "Résolution réelle, verrouillage mis à jour."}
+    - {file: src-tauri/tests/prototype_contracts.rs, change_type: created, description: "9 tests écrits avant implémentation."}
+    - {file: src-tauri/tests/prototype_services.rs, change_type: created, description: "4 tests filaires/finalité écrits avant adaptateurs, sans réseau."}
+    - {file: src-tauri/tests/prototype_audio.rs, change_type: created, description: "3 tests downmix/rééchantillonnage/VAD silence/limites, aucun micro."}
+    - {file: src/ui/Prototype.ts, change_type: modified, description: "Accord/start/pause/stop/reprise, structure simple/raccourcis, resync fail-closed, compteurs, fermeture après ack/recov ; non certifié desktop."}
+    - {file: src/ui/Prototype.test.ts, change_type: modified, description: "10 tests, dont U2/consentement/structure/perte synchronisation/fermeture bloquée sur file."}
+    - {file: src/main.ts, change_type: modified, description: "Montage natif du prototype partiel ; navigateur reste aperçu sans opérations natives."}
+    - {file: src/style.css, change_type: modified, description: "Menus/éditeur/opaque/statut internes."}
+    - {file: src-tauri/src/platform/controller.rs, change_type: created, description: "Pipeline continu, priorité, cancel/init/late races, enveloppe native et mesures."}
+    - {file: src-tauri/src/platform/pipeline.rs, change_type: created, description: "Passage/pré-roll/rotation bornés sans arrêt sur silence."}
+    - {file: src-tauri/src/platform/lifecycle.rs, change_type: created, description: "GNOME ScreenSaver/login1, état initial/abonnements/santé ; refus avant micro si indisponible."}
+    - {file: src-tauri/src/platform/lifecycle_windows.rs, change_type: created, description: "WTS/alimentation invisible ; types API vérifiés sur Linux seulement."}
+    - {file: src-tauri/tests/prototype_pipeline.rs, change_type: created, description: "9 tests framing/session/structure/opaque/fermeture."}
+    - {file: src-tauri/tests/prototype_envelope.rs, change_type: created, description: "Identifiants natifs consommés une seule fois."}
+    - {file: src-tauri/tests/prototype_ordered_save.rs, change_type: created, description: "2 tests ton→édition→copie exclusive et zéro effet sans destination/clarify."}
+    - {file: src-tauri/tests/windows_lifecycle_types.rs, change_type: created, description: "Forme API Windows sur Linux ; 0 test Windows."}
+    - {file: src-tauri/examples/probe_lifecycle.rs, change_type: created, description: "Sondage OS sans micro/trousseau/API ; code 2 sous WSL2."}
+  T007:
+    - {file: docs/validation/prototype-gnome.md, change_type: created, description: "Rapport G02–G09 NON EXÉCUTÉS, pas recette réalisée."}
+    - {file: docs/validation/prototype-windows.md, change_type: created, description: "Rapport G02–G09 NON EXÉCUTÉS, pas Windows recetté."}
+    - {file: docs/validation/prototype-metrics.md, change_type: created, description: "Mesures runtime absentes/inconnues, paramètres non assimilés à résultats."}
+progress_files:
+  - specs/001-bloc-notes-vocal/tasks.md
+  - specs/001-bloc-notes-vocal/plan.md
+  - specs/001-bloc-notes-vocal/quickstart.md
+  - specs/001-bloc-notes-vocal/checkpoints/tasks-to-impl.yaml
+  - specs/001-bloc-notes-vocal/batch-report.yaml
+historical_upstream_artifacts_consumed_B02:
+  T001:
+    - {artifact: "plan.md#P1.1 et research.md#R01/R05", used_for: "Reprise choix desktop et Q01."}
+  T002:
+    - {artifact: "research.md#R02/R03/R09", used_for: "PCM/WSS, finalité done, modèle alias, strict schema et inconnues."}
+  T003:
+    - {artifact: "quickstart.md#recette et spec.md#S8", used_for: "Matrice deux desktops et mesure des moyens réels."}
+  T004:
+    - {artifact: "plan.md#modèle minimal et éditeur visuel", used_for: "Contrats exacts U1/U2/U3 et intégrité."}
+    - {artifact: "checkpoints/spec-to-plan.yaml", used_for: "Traçabilité exigences vers items."}
+  T005:
+    - {artifact: "tasks.md#Précisions T005–T007", used_for: "Scaffold complet, validation initiale avant T006."}
+    - {artifact: "checkpoints/plan-to-tasks.yaml", used_for: "Dépendances et arrêt au premier blocage séquentiel."}
+  T006:
+    - {artifact: "plan.md#P1.6 et design-review.md#Assertions de prototype", used_for: "Tests avant code, autorité canonique, U1/U2/U3, limites explicites."}
+    - {artifact: "research.md#R02/R03/R04 et quickstart.md", used_for: "WSS/done/strict schema, CPAL/rubato/VAD et gate deux OS."}
+historical_evidence_mapping_B02:
+  T001:
+    - {upstream: "plan.md#1.1", output: "design-review.md#T001", evidence: "Revue documentaire, choix conservés sans redemande."}
+  T002:
+    - {upstream: "research.md#R02/R03/R09", output: "docs/validation/provider-check.md", evidence: "Protocole préparé, inconnues explicites, appels=0."}
+  T003:
+    - {upstream: "spec.md#S8", output: "docs/validation/environments.md", evidence: "Sondages exacts, aucune compatibilité présumée."}
+  T004:
+    - {upstream: "plan.md#U1/U2/U3", output: "design-review.md#T004", evidence: "Assertions préalables définies, pas déclarées passées."}
+  T005:
+    - {upstream: "tasks.md#T005", output: "package.json et src-tauri/", evidence: "B01-R2 avant T006 : 12 tests JS, 1 test Rust, check/build natif et fmt PASS."}
+  T006:
+    - {upstream: "plan.md#P1.6 et design-review.md#C1/U1/U2/U3", output: "platform/{probe,controller,pipeline,lifecycle,lifecycle_windows,mistral,capture}.rs, Prototype.ts et tests prototype_*", evidence: "32 Rust/22 JS PASS, check/build natifs et frontend PASS ; OS host probe code 2 ; forme API Windows seulement, aucun runtime cible certifié."}
+historical_traceability_B02:
+  - {requirement: REQ-029, plan_item: "1.1", task: T001, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-050, plan_item: "1.1", task: T001, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-001, plan_item: "1.2", task: T002, files: [docs/validation/provider-check.md], status: documentary-complete}
+  - {requirement: REQ-039, plan_item: "1.2", task: T002, files: [docs/validation/provider-check.md], status: documentary-complete}
+  - {requirement: REQ-042, plan_item: "1.2", task: T002, files: [docs/validation/provider-check.md], status: documentary-complete}
+  - {requirement: REQ-045, plan_item: "1.2", task: T002, files: [docs/validation/provider-check.md], status: documentary-complete}
+  - {requirement: REQ-050, plan_item: "1.3", task: T003, files: [docs/validation/environments.md], status: documentary-complete}
+  - {requirement: REQ-051, plan_item: "1.3", task: T003, files: [docs/validation/environments.md], status: documentary-complete}
+  - {requirement: REQ-052, plan_item: "1.3", task: T003, files: [docs/validation/environments.md], status: documentary-complete}
+  - {requirement: REQ-017, plan_item: "1.4", task: T004, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-022, plan_item: "1.4", task: T004, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-024, plan_item: "1.4", task: T004, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-039, plan_item: "1.4", task: T004, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-041, plan_item: "1.4", task: T004, files: [specs/001-bloc-notes-vocal/design-review.md], status: documentary-complete}
+  - {requirement: REQ-039, plan_item: "1.5", task: T005, files: [package.json, src-tauri/Cargo.toml], status: completed-scaffold}
+  - {requirement: REQ-050, plan_item: "1.5", task: T005, files: [src-tauri/tauri.conf.json], status: completed-scaffold-not-desktop-certification}
+  - {requirement: REQ-032, plan_item: "1.6", task: T006, files: [src-tauri/src/platform/probe.rs, src-tauri/tests/prototype_contracts.rs], status: partial-prototype-not-runtime-certified}
+  - {requirement: REQ-041, plan_item: "1.6", task: T006, files: [src-tauri/src/platform/secrets.rs, src/ui/Prototype.ts], status: implemented-not-exercised-with-real-keyring}
+  - {requirement: REQ-028, plan_item: "1.6", task: T006, files: [src-tauri/src/platform/capture.rs, src-tauri/src/platform/controller.rs], status: compiled-not-runtime-certified}
+protocol_violation: false
+errors: []
+historical_warnings_B02:
+  - {severity: HIGH, message: "T006 runtime non entièrement vérifié ; T007 NON EXÉCUTÉE sur les deux OS. Aucun GO."}
+  - {severity: HIGH, message: "Sondage OS WSL2 code 2 ; forme API Windows vérifiée sur Linux seulement, pas ABI/linkage/desktop Windows."}
+  - {severity: MEDIUM, message: "Tranche bornée : copie exclusive/save dernière action, listes opaques, pont et remplacement conditionnel complets/commandes fichiers vocales non annoncés. Tâches futures non cochées."}
+  - {severity: LOW, message: "runTests ne découvre pas les tests via l'intégration VS Code ; npm test les exécute réellement."}
+  - {severity: LOW, message: "Couverture de code non mesurée, aucun seuil de couverture spécifié ou revendiqué."}
+historical_test_results_B02:
+  T005:
+    command: npm test
+    passed: 12
+    failed: 0
+    skipped: 0
+    failures: []
+    files: [src/ui/Startup.test.ts, tests/scaffold.test.ts]
+    note: "Socle T005 : 9 cas UI/IPC et 3 cas configuration ; test:unit rejoue les mêmes 12."
+  T006:
+    frontend: {passed: 22, failed: 0, skipped: 0, files: [src/ui/Startup.test.ts, src/ui/Prototype.test.ts, tests/scaffold.test.ts]}
+    rust_before_cpal: {passed: 17, failed: 0, skipped: 0}
+    rust_final_after_cpal: {passed: 32, failed: 0, skipped: 0, command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --tests"}
+    windows_api_shape: "Compilation de forme API sur Linux ; 0 test Windows exécuté."
+    coverage: "Non mesurée ; aucun seuil revendiqué."
+initial_batch_validation_commands:
+  - {command: "node : vérification scripts build/test", result: PASS}
+  - {command: "npm install --ignore-scripts --no-audit --no-fund", result: PASS, note: "Après création manifeste, 102 paquets ajoutés."}
+  - {command: "npm test (avant Startup.ts)", result: EXPECTED_RED, note: "3 tests config passés, suite composant absente avant implémentation."}
+  - {command: "npm test (dernier état)", result: PASS, passed: 12, failed: 0, skipped: 0}
+  - {command: "npm run test:unit (dernier état)", result: PASS, passed: 12, failed: 0, skipped: 0}
+  - {command: "npm run typecheck", result: PASS}
+  - {command: "npm run build", result: PASS, note: "Typecheck + Vite, 3 fichiers dist uniquement."}
+  - {command: "npm run tauri -- icon src-tauri/icons/app.svg --output /tmp/vocalnotes-build-installer/generated-icons", result: PASS, note: "Seuls les deux PNG et ICO utiles copiés dans le projet ; signatures vérifiées par tests."}
+  - {command: "cargo generate-lockfile --manifest-path src-tauri/Cargo.toml", result: PASS, note: "Après création lib.rs ; 406 paquets."}
+  - {command: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check", result: PASS}
+  - {command: "cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml", result: PASS}
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml", result: BLOCKED, exit_code: 101}
+  - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib", result: BLOCKED, exit_code: 101, executed: 0}
+  - {command: "npm run tauri -- info (PATH local Rust explicite)", result: DIAGNOSTIC, note: "Versions Rust reconnues, dépendances natives manquantes ; pas une validation build."}
+  - {command: "runTests sur les deux fichiers absolus", result: UNAVAILABLE, note: "No tests found via intégration ; pas un échec Vitest."}
+  - {command: "Validation ciblée YAML/statuts/fichiers/lock npm par Python", result: PASS, note: "Deux YAML parsés, 4/60 cases cohérentes dans tasks et plan, 60 IDs uniques, 53 tâches hors lot, fichiers déclarés présents."}
+provider_calls:
+  authorization: "Reçue pendant B01 : usage local de clé pour vérifications officielles synthétiques bornées, coût possible inclus."
+  total: 0
+  catalogue: 0
+  structured_completion: 0
+  stt: 0
+  key_file_read: false
+  reason: "Aucun appel nécessaire aux tests déterministes ; autorisation synthétique reçue mais non utilisée, aucun micro/desktop cible recetté."
+  served_models: []
+  prices: unknown
+  cost: "Aucun appel Mistral effectué par ce lot ; aucun coût d'essai engagé, tarifs toujours inconnus."
+environment_changes:
+  system_packages_installed: false
+  system_packages_note: "Aucun paquet système installé par l'agent ; libasound2-dev installé par l'utilisateur, SDK ALSA 1.2.11 détecté."
+  user_toolchain: "/home/laurent/.local/share/vocalnotes-build/"
+  rust: "1.99.1"
+  shell_profile_modified: false
+  git_initialized: false
+  secret_files_read_or_modified: false
+  constitution_modified: false
+  attachment_modified: false
+hooks:
+  before_implement: "SKIPPED : .specify/extensions.yml absent."
+  after_implement: "SKIPPED : .specify/extensions.yml absent lors du contrôle final."
+historical_runtime_B02:
+  microphone_started: false
+  desktop_tests: "NON EXÉCUTÉS sur les deux OS."
+  browser_e2e: "NON EXÉCUTÉ ; Vitest/jsdom ne certifie pas le desktop ou le trousseau."
+  temporary_servers_started: 0
+  helpers_left_running: 0
+historical_next_actions_B02:
+  - "Fournir GNOME/Wayland et Windows 11 interactifs ; même arbre/lockfiles, clé masquée au vrai trousseau et accord micro contextualisé."
+  - "Vérifier T006 et recetter G02–G09/A–K ; corriger toute erreur réelle/NO-GO, relever mesures/modèles/tarifs inconnus sans sensible."
+  - "Cocher T006 seulement entièrement vérifiée et T007 après GO des deux OS ; aucune T008+ avant ce gate."
+resume_attempts:
+  - attempt_id: B01-R1
+    date: "2026-10-30"
+    status: blocked_awaiting_authorization
+    scope: [T005]
+    new_completed_tasks: []
+    product_source_modified: false
+    manifest_or_lockfile_modified: false
+    progress_files_modified:
+      - docs/validation/environments.md
+      - specs/001-bloc-notes-vocal/tasks.md
+      - specs/001-bloc-notes-vocal/batch-report.yaml
+      - specs/001-bloc-notes-vocal/checkpoints/tasks-to-impl.yaml
+    context:
+      custom_agent_instructions: ".github/agents/speckit.implement.agent.md"
+      governance: ".specify/memory/constitution.md"
+      constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+      decisions_preserved: ["U1 : changement/réouverture invalide les anciens traitements", "U2 : cœur Rust canonique autoritaire", "U3 : ambiguïté entière sans effet ni rejeu"]
+      checklist: {file: checklists/requirements.md, total: 28, completed: 28, incomplete: 0, result: PASS}
+      ignores: "Git absent ; .gitignore existant vérifié sans modification. package.json private=true, pas de publication npm ; aucun Docker/ESLint/Prettier/Terraform/Helm détecté dans le périmètre setup."
+    environment:
+      os: "Ubuntu 24.04.4 LTS x86_64 / WSL2"
+      node: "22.23.2"
+      npm: "12.2.1"
+      cargo: "1.99.1"
+      rustc: "1.99.1"
+      cargo_home: "/home/laurent/.local/share/vocalnotes-build/cargo"
+      rustup_home: "/home/laurent/.local/share/vocalnotes-build/rustup"
+      path: "CARGO_HOME/bin ajouté seulement dans les processus de validation."
+      build_essential: installed
+      runtime_libraries: "D-Bus, GLib/GObject, GTK3, WebKitGTK 4.1 et ALSA trouvés par ldconfig."
+      missing_development_headers: [dbus-1.0, glib-2.0, gtk-3.0, webkitgtk-4.1, alsa]
+      pkg_config_or_pkgconf_available: false
+      local_sdk_search: "Aucun SDK établi dans /usr/{lib/x86_64-linux-gnu,share}/pkgconfig, /usr/local/lib/pkgconfig, /opt (partie lisible), toolchain utilisateur ; profondeur limitée à 4."
+      apt_cache_search: "Aucune archive correspondante outil/SDK D-Bus/GLib/GTK/WebKitGTK/ALSA dans /var/cache/apt/archives."
+      local_sysroot: "Non fourni ; aucun sysroot téléchargé/assemblé. Alternative possible à un provisionnement système, non certifiée par cet essai."
+    commands:
+      - {command: ".specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks", result: PASS, exit_code: 0}
+      - {command: "node : vérification scripts build/test/typecheck/test:unit/tauri et private=true", result: PASS, exit_code: 0}
+      - {command: "runTests sur src/ui/Startup.test.ts et tests/scaffold.test.ts (chemins absolus)", result: UNAVAILABLE, note: "No tests found ; repli sur le script npm existant, sans installation."}
+      - {command: "npm test", result: PASS, exit_code: 0, passed: 12, failed: 0, skipped: 0}
+      - {command: "npm run typecheck", result: PASS, exit_code: 0}
+      - {command: "npm run build", result: PASS, exit_code: 0, note: "Typecheck + Vite ; pas une compilation native."}
+      - {command: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check", result: PASS, exit_code: 0}
+      - {command: "cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml", result: PASS, exit_code: 0}
+      - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml", result: BLOCKED, exit_code: 101, note: "libdbus-sys 0.2.7 : pkg-config --libs --cflags dbus-1 introuvable."}
+      - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib", result: BLOCKED, exit_code: 101, executed: 0, note: "Premier échec gdk-sys 0.18.2 ; GIO/GObject/GLib, pixbuf/cairo/ATK également bloqués par pkg-config absent."}
+      - {command: "apt-get --simulate --no-install-recommends install pkg-config libdbus-1-dev libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf", result: SIMULATION_ONLY, exit_code: 0, newly_installed: 96, upgraded: 12, removed: 0}
+      - {command: "apt-get --simulate --no-install-recommends install pkg-config libdbus-1-dev libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev", result: SIMULATION_ONLY, exit_code: 0, newly_installed: 97, upgraded: 12, removed: 0}
+      - {command: "Python : parsing YAML rapport/checkpoint, 60 IDs uniques, 4 cases complétées, T005 bloquée, chemins et SHA-256 constitution", result: PASS, exit_code: 0}
+    authorization_request:
+      status: awaiting_explicit_user_approval
+      ask_user_tool: "Non exposé après recherche ; demande dans la réponse utilisateur."
+      command_NOT_executed: "sudo apt-get --no-install-recommends install pkg-config libdbus-1-dev libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf"
+      direct_packages: [pkg-config, libdbus-1-dev, libglib2.0-dev, libgtk-3-dev, libwebkit2gtk-4.1-dev, librsvg2-dev, patchelf]
+      additional_T006_package_not_in_T005_request: libasound2-dev
+      impact: "Selon index locaux : 96 nouveaux paquets, 12 mises à jour incluant GLib et Mesa ; 0 suppression. Aucun apt update exécuté ; simulation non garantie après changement d'index."
+      tray_dependencies_requested: false
+    boundaries:
+      system_packages_installed: false
+      system_files_or_shell_profile_modified: false
+      project_dependencies_installed: false
+      feature_bypass_or_mock_added: false
+      git_initialized_or_committed: false
+      constitution_modified: false
+      secret_file_read_or_modified: false
+      mistral_calls: 0
+      microphone_started: false
+      temporary_helpers_started: 0
+      T006: not_started
+      T007: not_executed_on_either_platform
+      T008_plus: not_started
+    verdict:
+      native_build: BLOCKED
+      rust_tests: "BLOCKED avant exécution ; pas de tests Rust passés."
+      desktop_startup: UNVERIFIED
+      integration: UNVERIFIED
+      e2e: UNVERIFIED
+      coverage: "Non mesurée ; aucun seuil revendiqué."
+      overall: BLOCKED
+      hooks_before: "SKIPPED : .specify/extensions.yml absent."
+      hooks_after: "SKIPPED : .specify/extensions.yml absent au contrôle final."
+  - attempt_id: B01-R2
+    date: "2026-10-30"
+    status: partial_blocked_on_alsa_development_sdk
+    scope: [T005, T006]
+    new_completed_tasks: [T005]
+    context:
+      checklist: {file: checklists/requirements.md, total: 28, completed: 28, incomplete: 0, result: PASS}
+      constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+      governance_and_user_changes_preserved: true
+      hook_file_exists: false
+      custom_agent_instructions: ".github/agents/speckit.implement.agent.md"
+    T005:
+      native_check: PASS
+      rust_test: {passed: 1, failed: 0, skipped: 0}
+      native_build: PASS
+      rust_format: PASS
+      frontend_test: {passed: 12, failed: 0, skipped: 0}
+      frontend_typecheck_and_build: PASS
+      note: "Ces preuves précèdent toute modification T006 ; elles terminent le socle, pas la recette desktop."
+    T006_before_cpal:
+      native_check: PASS
+      rust_tests: {passed: 17, failed: 0, skipped: 0, suites: [lib, prototype_contracts, prototype_services, prototype_audio]}
+      native_build: PASS
+      capture_module_in_compiled_graph: false
+      frontend_tests: {passed: 19, failed: 0, skipped: 0}
+      frontend_typecheck_and_build: PASS
+      tdd: "Rouges observés pour modules manquants prototype_contracts, Prototype, prototype_services et prototype_audio ; corrigés ensuite. Erreurs de compilation intermédiaires corrigées avant le checkpoint pré-CPAL."
+    final_tree_after_cpal:
+      native_check: {result: BLOCKED, exit_code: 101, crate: "alsa-sys 0.3.1", reason: "alsa.pc absent"}
+      native_tests_and_build: "NON EXÉCUTÉS après CPAL : même prérequis système manquant ; ne pas assimiler les résultats pré-CPAL au code de capture final."
+      rust_format: PASS
+      cargo_metadata_locked_no_deps: PASS
+      capture_module_compiled: false
+      prototype_complete: false
+      desktop_go: false
+    authorization_request:
+      status: awaiting_explicit_user_approval_or_user_installation
+      ask_user_tool: "Non exposé après recherche ; question explicite dans la réponse, aucune installation."
+      command_NOT_executed: "sudo apt-get --no-install-recommends install libasound2-dev"
+      simulation: {newly_installed: 1, upgraded: 0, removed: 0, package: "libasound2-dev 1.2.11-1ubuntu0.3"}
+    remaining_T006:
+      - "Compiler et tester la capture CPAL une fois ALSA dev disponible ; pas encore de preuve rustc pour ce module."
+      - "Assembler le contrôleur continu, STT entrée/sortie simultanées, rotation done, tampon suivant borné, annulation et priorité sémantique ; tests C1 complets."
+      - "Compléter identité session/passage/opération/séquence, déduplication et barrières atomiques en runtime, pas seulement les tickets de prototype."
+      - "Surveillance GNOME ScreenSaver/login1 et WTS/alimentation Windows vérifiée, arrêt sûr si surveillance indisponible, aucune auto-reprise."
+      - "Compléter édition multi-blocs, raccourcis undo/redo et protections du pont ; sauvegarde automatique/remplacement/volumes/courses disque."
+      - "Exercer réellement keyring et pipeline ; essais API synthétiques bornés utiles seulement après assemblage, modèle/tarif/conditions toujours inconnus."
+    boundaries:
+      system_packages_installed_by_agent: false
+      system_packages_installed_by_user: "pkg-config/SDK desktop constatés installés."
+      project_dependencies_downloaded: true
+      feature_bypass: false
+      git_initialized_or_committed: false
+      constitution_modified: false
+      secret_file_read_or_modified: false
+      mistral_calls: 0
+      microphone_started: false
+      native_keyring_calls: 0
+      desktop_recipes: "NON EXÉCUTÉES"
+      helpers_left_running: 0
+      T008_plus: not_started
+  - attempt_id: B01-R3
+    date: "2026-10-31"
+    status: partial_runtime_gate
+    scope: [T006, T007]
+    new_completed_tasks: []
+    context:
+      custom_agent_instructions: ".github/agents/speckit.implement.agent.md"
+      governance: ".specify/memory/constitution.md"
+      constitution_sha256: "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+      checklist: {file: checklists/requirements.md, total: 28, completed: 28, incomplete: 0, result: PASS}
+      prerequisite_feature_dir: "/home/laurent/projects/vocalnotes/specs/001-bloc-notes-vocal"
+      available_docs: [research.md, quickstart.md, tasks.md]
+      optional_design_artifacts: "Aucun data-model/contracts autonome attendu ; modèle et interfaces dans plan.md."
+      ignores: "Git absent, .gitignore existant vérifié ; npm private=true, pas publication, pas Docker/ESLint/Prettier/Terraform/Helm détectés."
+      decisions_preserved: ["U1 invalidation new/open/reopen", "U2 Rust canonique/ack/rejet/undo/sans rejeu", "U3 intervention ambiguë entière sans effet"]
+    implementation:
+      controller: "CPAL→rubato/VAD→pré-roll→WSS duplex→flush/end/done→LLM ordonné→commit atomique ; priorité coalescée indépendante."
+      bounds: {preroll_ms: 300, native_frames: 64, controller_frames: 128, pending_finals: 4, passage_s: 60, provisional_utf8_bytes: 4096, priority_coalesce_ms: 750}
+      limits_note: "Paramètres d'ingénierie, pas délais/pertes/performances mesurés."
+      lifecycle: "GNOME ScreenSaver/login1 + santé/propriétaires ; Windows WTS/WM_POWERBROADCAST + état/santé WTS."
+      envelope: "note/session/génération/request/operation/passage/sequence/baseRevision natifs ; consommation unique au commit."
+      ui: "Accord contextualisé/start/pause/stop/reprise ; structure simple, raccourcis, resync fail-closed, recovery mémoire."
+      save_close: "Ton→édition→save dernière action, copie exclusive ; X suspend, finalisation dédiée après ack/recovery et sauvegarde acceptée."
+      measurements: "Tentatives, ms audio, modèles et derniers délais en mémoire ; inconnues explicites, aucun prix inventé."
+    final_state:
+      frontend: {tests_passed: 22, failed: 0, skipped: 0, typecheck: PASS, build: PASS}
+      native: {tests_passed: 32, failed: 0, skipped: 0, check_tests: PASS, build: PASS, format: PASS, cpal_compiled: true}
+      windows: "Forme API vérifiée sur Linux uniquement ; 0 test Windows, pas SDK/MSVC/linkage Windows certifié."
+      os_host_probe: {exit_code: 2, result: "Surveillance OS native indisponible sous WSL2", microphone_or_keyring_or_provider_used: false}
+      coverage: "Non mesurée ; aucun seuil revendiqué."
+      T006: partial_unchecked
+      T007: not_executed_on_either_platform
+      T008_plus: not_started
+    red_and_remediation:
+      - "Tests Rust pipeline écrits avant code : échec 101 méthodes/module manquants, puis PASS."
+      - "Deux tests UI consentement/structure écrits avant code : 2 FAIL/7 PASS, puis PASS."
+      - "Contrôle intermédiaire : insertion TS mal placée et tests Rust imbriqués ; corrigés, typecheck/tests finaux sans avertissements."
+      - "runTests ne trouve pas Prototype.test.ts ; repli réel npm test."
+    dependencies:
+      project_only: ["prosemirror-keymap 1.2.3", "prosemirror-schema-list 1.6.0", "dbus 0.9.12 direct", "windows-sys 0.61.2 direct/dev type-check"]
+      commands: ["npm install --ignore-scripts", "cargo check --offline --manifest-path src-tauri/Cargo.toml", "cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc"]
+      windows_fetch_note: "Définitions/dépendances téléchargées, pas de SDK ou target Rust système installé."
+    boundaries:
+      system_packages_installed_by_agent: false
+      user_installed_alsa: "pkg-config alsa 1.2.11"
+      shell_profile_modified: false
+      git_initialized_or_committed: false
+      constitution_modified: false
+      secret_file_read_or_modified: false
+      mistral_calls: 0
+      microphone_started: false
+      native_keyring_calls: 0
+      desktop_recipes: "NON EXÉCUTÉES"
+      helpers_started_or_left_running: 0
+      hooks: "before/after skipped : extensions.yml absent"
+previous_validation_commands_B01_R3:
+  - {command: ".specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks", result: PASS, exit_code: 0}
+  - {command: "pkg-config --modversion alsa", result: PASS, version: "1.2.11", exit_code: 0}
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml (reprise CPAL)", result: PASS, exit_code: 0}
+  - {command: "node : scripts build/test vérifiés puis npm test après modification package.json", result: PASS}
+  - {command: "npm test (arbre final)", result: PASS, passed: 22, failed: 0, skipped: 0, exit_code: 0}
+  - {command: "npm run typecheck (arbre final)", result: PASS, exit_code: 0}
+  - {command: "npm run build (arbre final)", result: PASS, exit_code: 0}
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml --tests (arbre final)", result: PASS, exit_code: 0}
+  - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --tests (arbre final)", result: PASS, passed: 32, failed: 0, skipped: 0, exit_code: 0}
+  - {command: "cargo build --locked --manifest-path src-tauri/Cargo.toml (arbre final)", result: PASS, exit_code: 0}
+  - {command: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check (arbre final)", result: PASS, exit_code: 0}
+  - {command: "cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml", result: PASS, exit_code: 0}
+  - {command: "cargo run --locked --manifest-path src-tauri/Cargo.toml --example probe_lifecycle", result: UNAVAILABLE, exit_code: 2, note: "Sondage OS natif sans micro/trousseau/API, pas recette GNOME."}
+  - {command: "Python : parsing YAML/statuts/60 IDs/fichiers/32 Rust/22 JS/SHA-256 constitution", result: PASS, exit_code: 0, note: "5 tâches complétées seulement ; T006/T007 décochées, T008+ intactes."}
+previous_validation_commands_B01_R2:
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml (T005 avant modifications)", result: PASS, exit_code: 0}
+  - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib (T005)", result: PASS, passed: 1, failed: 0, skipped: 0}
+  - {command: "cargo build --locked --manifest-path src-tauri/Cargo.toml (T005)", result: PASS, exit_code: 0}
+  - {command: "cargo check --locked --manifest-path src-tauri/Cargo.toml (T006 avant raccordement CPAL)", result: PASS, exit_code: 0}
+  - {command: "cargo test --locked --manifest-path src-tauri/Cargo.toml (T006 avant CPAL)", result: PASS, passed: 17, failed: 0, skipped: 0}
+  - {command: "cargo build --locked --manifest-path src-tauri/Cargo.toml (T006 avant CPAL)", result: PASS, exit_code: 0}
+  - {command: "npm test (dernier frontend)", result: PASS, passed: 19, failed: 0, skipped: 0}
+  - {command: "npm run typecheck", result: PASS, exit_code: 0}
+  - {command: "npm run build (dernier frontend, typecheck inclus)", result: PASS, exit_code: 0}
+  - {command: "cargo check --manifest-path src-tauri/Cargo.toml (résolution CPAL et arbre final)", result: BLOCKED, exit_code: 101, note: "alsa-sys, SDK ALSA absent."}
+  - {command: "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check (arbre final)", result: PASS, exit_code: 0}
+  - {command: "cargo metadata --locked --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 (arbre final)", result: PASS, exit_code: 0}
+  - {command: "apt-get --simulate --no-install-recommends install libasound2-dev", result: SIMULATION_ONLY, exit_code: 0, newly_installed: 1, upgraded: 0, removed: 0}

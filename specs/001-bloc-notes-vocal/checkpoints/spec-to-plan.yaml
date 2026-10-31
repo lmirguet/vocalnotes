@@ -1,0 +1,230 @@
+# Adaptation du modèle : ancres pour éviter de répéter les intitulés d'items.
+# Validation documentaire seulement ; aucune recette du produit.
+metadata:
+  generated: "2026-10-30"
+  source_spec: "specs/001-bloc-notes-vocal/spec.md"
+  target_plan: "specs/001-bloc-notes-vocal/plan.md"
+  language: "fr"
+  requirement_priority: "La spec priorise les parcours, pas chaque REQ ; aucune priorité de REQ inventée."
+  mapping_phase: "Le préfixe de chaque item indique sa phase ; une REQ peut traverser plusieurs phases."
+summary:
+  total_requirements: 53
+  covered_requirements: 53
+  missing_requirements: 0
+  coverage_percentage: 100.0
+plan_items:
+  - &p11 {item_id: "1.1", description: "Reprise des décisions desktop"}
+  - &p12 {item_id: "1.2", description: "Vérification fournisseur et audio"}
+  - &p13 {item_id: "1.3", description: "Moyens de validation réels"}
+  - &p14 {item_id: "1.4", description: "Revue interne des interfaces"}
+  - &p15 {item_id: "1.5", description: "Socle retenu, sans Git"}
+  - &p16 {item_id: "1.6", description: "Faisabilité et premier prototype sur deux desktops"}
+  - &p21 {item_id: "2.1", description: "Modèle minimal et autorité de mutation"}
+  - &p22 {item_id: "2.2", description: "Fichiers et fermeture sûre"}
+  - &p23 {item_id: "2.3", description: "Frontière UI et Markdown"}
+  - &p24 {item_id: "2.4", description: "Configuration et secrets natifs"}
+  - &p25 {item_id: "2.5", description: "Adaptateurs Mistral indépendants"}
+  - &p26 {item_id: "2.6", description: "Écoute, interruptions et hors fenêtre"}
+  - &p27 {item_id: "2.7", description: "Gate des fondations"}
+  - &p31 {item_id: "3.1", description: "Intention et rédaction"}
+  - &p32 {item_id: "3.2", description: "Perception du résultat appliqué"}
+  - &p41 {item_id: "4.1", description: "Opérations ordonnées et ciblées"}
+  - &p42 {item_id: "4.2", description: "Clarification et épellation"}
+  - &p43 {item_id: "4.3", description: "Toutes les actions vocales"}
+  - &p51 {item_id: "5.1", description: "Transfert exclusif et undo manuel"}
+  - &p61 {item_id: "6.1", description: "Parcours de note unique"}
+  - &p62 {item_id: "6.2", description: "Préservation et conflits réels"}
+  - &p71 {item_id: "7.1", description: "Préférences transparentes"}
+  - &p72 {item_id: "7.2", description: "Consommation et conditions externes"}
+  - &p81 {item_id: "8.1", description: "Matrice complète et objectif macOS"}
+  - &p91 {item_id: "9.1", description: "Vue de transcription et purge"}
+  - &p101 {item_id: "10.1", description: "Robustesse et confidentialité"}
+  - &p102 {item_id: "10.2", description: "Fidélité et recette finale sur deux systèmes"}
+  - &p103 {item_id: "10.3", description: "Décision de livraison et recontrôle constitutionnel"}
+requirements:
+  - req_id: "REQ-001"
+    req_description: "Français continu naturel"
+    plan_mapping: {items: [*p12, *p25, *p31]}
+  - req_id: "REQ-002"
+    req_description: "Fidélité sans faits ajoutés"
+    plan_mapping: {items: [*p31, *p102]}
+  - req_id: "REQ-003"
+    req_description: "Forme, ton et détail"
+    plan_mapping: {items: [*p31]}
+  - req_id: "REQ-004"
+    req_description: "Idée versus instruction"
+    plan_mapping: {items: [*p23, *p41]}
+  - req_id: "REQ-005"
+    req_description: "Intentions ordonnées ; aucune action si intervention ambiguë"
+    plan_mapping: {items: [*p21, *p41]}
+  - req_id: "REQ-006"
+    req_description: "Édition ciblée naturelle"
+    plan_mapping: {items: [*p41]}
+  - req_id: "REQ-007"
+    req_description: "Signaler l'ambiguïté sans exécuter l'intervention"
+    plan_mapping: {items: [*p41, *p42, *p102]}
+  - req_id: "REQ-008"
+    req_description: "Changements directs perceptibles"
+    plan_mapping: {items: [*p41]}
+  - req_id: "REQ-009"
+    req_description: "Correction contextuelle"
+    plan_mapping: {items: [*p41]}
+  - req_id: "REQ-010"
+    req_description: "Intention libre et changeante"
+    plan_mapping: {items: [*p31]}
+  - req_id: "REQ-011"
+    req_description: "Épellation précise"
+    plan_mapping: {items: [*p42]}
+  - req_id: "REQ-012"
+    req_description: "Lexique de session ciblé"
+    plan_mapping: {items: [*p42]}
+  - req_id: "REQ-013"
+    req_description: "Actions vocales complètes"
+    plan_mapping: {items: [*p26, *p43]}
+  - req_id: "REQ-014"
+    req_description: "Manuel exclusif classique ; représentation du cœur prioritaire sur l'éditeur"
+    plan_mapping: {items: [*p51]}
+  - req_id: "REQ-015"
+    req_description: "Aucun undo/redo vocal"
+    plan_mapping: {items: [*p21, *p41, *p51]}
+  - req_id: "REQ-016"
+    req_description: "Arrêt et invalidation immédiats"
+    plan_mapping: {items: [*p21, *p51]}
+  - req_id: "REQ-017"
+    req_description: "Résultats invalidés/périmés ; invalidation au changement de note"
+    plan_mapping: {items: [*p14, *p21, *p51, *p61, *p62, *p101]}
+  - req_id: "REQ-018"
+    req_description: "Reprise explicite sur tout texte"
+    plan_mapping: {items: [*p21, *p51]}
+  - req_id: "REQ-019"
+    req_description: "Undo manuel non persistant"
+    plan_mapping: {items: [*p21, *p51]}
+  - req_id: "REQ-020"
+    req_description: "Note unique Markdown locale"
+    plan_mapping: {items: [*p22, *p43, *p61]}
+  - req_id: "REQ-021"
+    req_description: "Interface simple, menus, bandeau, rendu et copie/export bruts"
+    plan_mapping: {items: [*p23, *p51, *p61]}
+  - req_id: "REQ-022"
+    req_description: "Unsupported préservé"
+    plan_mapping: {items: [*p14, *p22, *p23, *p51, *p62]}
+  - req_id: "REQ-023"
+    req_description: "Autosauvegarde retrouvable"
+    plan_mapping: {items: [*p22, *p61, *p62]}
+  - req_id: "REQ-024"
+    req_description: "Conflits sans écrasement"
+    plan_mapping: {items: [*p14, *p22, *p61, *p62, *p101]}
+  - req_id: "REQ-025"
+    req_description: "Affichage progressif"
+    plan_mapping: {items: [*p32]}
+  - req_id: "REQ-026"
+    req_description: "Traitement et zones réelles"
+    plan_mapping: {items: [*p23, *p32]}
+  - req_id: "REQ-027"
+    req_description: "Lisibilité sans vol de focus"
+    plan_mapping: {items: [*p23, *p32]}
+  - req_id: "REQ-028"
+    req_description: "Entrée volontaire et permission"
+    plan_mapping: {items: [*p16, *p26]}
+  - req_id: "REQ-029"
+    req_description: "Arrière-plan, indicateur interne, pause"
+    plan_mapping: {items: [*p11, *p16, *p26, *p42, *p43]}
+  - req_id: "REQ-030"
+    req_description: "États FR distincts"
+    plan_mapping: {items: [*p23, *p26]}
+  - req_id: "REQ-031"
+    req_description: "Silence sans arrêt imposé"
+    plan_mapping: {items: [*p26, *p43]}
+  - req_id: "REQ-032"
+    req_description: "Pause/arrêt invalidants"
+    plan_mapping: {items: [*p16, *p21, *p26, *p43]}
+  - req_id: "REQ-033"
+    req_description: "Pertes micro/réseau explicites"
+    plan_mapping: {items: [*p16, *p25, *p26]}
+  - req_id: "REQ-034"
+    req_description: "Avertissement captation tiers"
+    plan_mapping: {items: [*p26]}
+  - req_id: "REQ-035"
+    req_description: "Lock/sleep sans auto-reprise"
+    plan_mapping: {items: [*p16, *p26, *p101]}
+  - req_id: "REQ-036"
+    req_description: "Fermeture arrêt/sauvegarde/fin"
+    plan_mapping: {items: [*p16, *p22, *p26, *p62, *p101]}
+  - req_id: "REQ-037"
+    req_description: "Échec fermeture sans perte"
+    plan_mapping: {items: [*p16, *p22, *p62, *p101]}
+  - req_id: "REQ-038"
+    req_description: "Préférences accessibles"
+    plan_mapping: {items: [*p24, *p43, *p71]}
+  - req_id: "REQ-039"
+    req_description: "Ports/fournisseurs distincts"
+    plan_mapping: {items: [*p12, *p14, *p15, *p21, *p24, *p25, *p71, *p103]}
+  - req_id: "REQ-040"
+    req_description: "Gestion masquée de clés"
+    plan_mapping: {items: [*p24, *p71]}
+  - req_id: "REQ-041"
+    req_description: "Trousseau sans fallback clair"
+    plan_mapping: {items: [*p14, *p16, *p24, *p71, *p101]}
+  - req_id: "REQ-042"
+    req_description: "Test explicite informé"
+    plan_mapping: {items: [*p12, *p24, *p71]}
+  - req_id: "REQ-043"
+    req_description: "Prise d'effet et fournisseur choisi"
+    plan_mapping: {items: [*p24, *p25, *p71]}
+  - req_id: "REQ-044"
+    req_description: "Coûts estimés qualifiés"
+    plan_mapping: {items: [*p72]}
+  - req_id: "REQ-045"
+    req_description: "Données/services transparents"
+    plan_mapping: {items: [*p12, *p24, *p25, *p72, *p103]}
+  - req_id: "REQ-046"
+    req_description: "Données temporaires purgées"
+    plan_mapping: {items: [*p21, *p42, *p72, *p91, *p101]}
+  - req_id: "REQ-047"
+    req_description: "Diagnostic opt-in sensible"
+    plan_mapping: {items: [*p91]}
+  - req_id: "REQ-048"
+    req_description: "Segments qualifiés et vidage"
+    plan_mapping: {items: [*p25, *p91]}
+  - req_id: "REQ-049"
+    req_description: "Aucune transcription persistante"
+    plan_mapping: {items: [*p91, *p101]}
+  - req_id: "REQ-050"
+    req_description: "Deux desktops à chaque jalon"
+    plan_mapping: {items: [*p11, *p13, *p15, *p16, *p27, *p32, *p43, *p51, *p62, *p72, *p81, *p91, *p102, *p103]}
+  - req_id: "REQ-051"
+    req_description: "macOS objectif à vérifier"
+    plan_mapping: {items: [*p13, *p81, *p102, *p103]}
+  - req_id: "REQ-052"
+    req_description: "Mesures contextualisées"
+    plan_mapping: {items: [*p13, *p16, *p27, *p32, *p43, *p51, *p62, *p72, *p81, *p91, *p102, *p103]}
+  - req_id: "REQ-053"
+    req_description: "Qualité quatre usages"
+    plan_mapping: {items: [*p31, *p81, *p102]}
+missing_requirements: []
+orphan_plan_items: []
+validation:
+  passed: true
+  traceability_passed: true
+  readiness: "READY_FOR_SPECKIT_TASKS"
+  product_readiness: "NON_EXÉCUTÉ"
+  errors: []
+  warnings:
+    - "G02–G09 : critères futurs de recette, pas erreurs de planification ; G10 : revue interne des interfaces inline."
+    - "Alias mistral-large-latest documenté pour json_schema, version servie et accès compte à relever au premier essai."
+    - "Tarifs et conservation fournisseur non vérifiés (TLS) ; coûts inconnus et pas de données sensibles avant vérification."
+    - "100 % de couverture documentaire ne signifie ni implémentation ni recette desktop."
+verification:
+  date: "2026-10-30"
+  method: "Python3/PyYAML/jsonschema en lecture seule, sans installation ni runtime produit"
+  documentary_result: "PASS"
+  canonical_requirements_unique: 53
+  plan_items_unique: 28
+  scenario_count: 29
+  scenario_s45_covered: true
+  local_links_and_anchors_valid: true
+  local_links_and_anchors_checked: 13
+  protected_source_hashes_unchanged: 5
+  specification_physical_lines: 310
+  missing_coverage: 0
+  product_tests_executed: 0

@@ -1,0 +1,127 @@
+batch_id: B02-W05
+scope: T006/T007 Windows native STT connection diagnostic only
+completed_tasks: []
+completed_subtasks:
+  - Persist user first-passage FAIL after confirmed consent and key presence
+  - Classify handshake failures without response text or secrets
+  - Validate Linux source and allowlisted Windows copy without replacing active exe
+blocked_tasks:
+  - task_id: T006
+    reason: Application executable link/deployment requires confirmed note recovery and clean closure
+    required_task_ids: []
+  - task_id: T007
+    reason: Voice recipe failed; no additional authenticated call authorized; GNOME deferred
+    required_task_ids: [T006]
+files_changed:
+  T006:
+    - file: src-tauri/src/platform/stt_transport.rs
+      change_type: created
+      description: Fixed request builder and typed allowlisted error classifier plus five synthetic tests
+    - file: src-tauri/src/platform/mistral.rs
+      change_type: modified
+      description: Route handshake failure through classifier; no transport/protocol/consent changes
+    - file: src-tauri/src/platform/mod.rs
+      change_type: modified
+      description: Export transport helper
+    - file: src-tauri/Cargo.toml
+      change_type: modified
+      description: Direct already-locked rustls dependency for typed IO payload downcast
+    - file: src-tauri/Cargo.lock
+      change_type: modified
+      description: Only application direct dependency list changed, no package upgrades
+    - file: src-tauri/examples/probe_stt_transport.rs
+      change_type: created
+      description: Single no-key no-audio bounded WebSocket handshake with allowlisted categories
+    - file: tooling/windows-stt-check.ps1
+      change_type: created
+      description: Explicit probe action separate from no-network library-only validation
+  T007:
+    - file: docs/validation/prototype-windows.md
+      change_type: modified
+      description: Persist FAIL, transport evidence, unknowns, tests and safe deployment gate
+upstream_artifacts_consumed:
+  T006:
+    - artifact: specs/001-bloc-notes-vocal/plan.md
+      used_for: Fixed native provider and verified TLS architecture
+    - artifact: specs/001-bloc-notes-vocal/research.md
+      used_for: Official endpoint/model/header source
+    - artifact: .specify/memory/constitution.md
+      used_for: Confidentiality, temporary content and note preservation
+    - artifact: docs/validation/prototype-windows.md
+      used_for: W04 consent/key presence and active W03 executable
+evidence_mapping:
+  T006:
+    - upstream: specs/001-bloc-notes-vocal/research.md#R02
+      output: src-tauri/src/platform/stt_transport.rs
+      evidence: Five synthetic tests PASS Linux and Windows; official SDK URL/header verification
+traceability:
+  - requirement: REQ-042
+    plan_item: "1.6"
+    task: T006
+    files: [src-tauri/src/platform/stt_transport.rs, src-tauri/src/platform/mistral.rs]
+    status: partial
+  - requirement: REQ-041
+    plan_item: "1.6"
+    task: T006
+    files: [src-tauri/src/platform/stt_transport.rs]
+    status: partial
+  - requirement: REQ-043
+    plan_item: "1.6"
+    task: T006
+    files: [src-tauri/src/platform/mistral.rs]
+    status: partial
+  - requirement: REQ-046
+    plan_item: "1.6"
+    task: T006
+    files: [src-tauri/src/platform/stt_transport.rs]
+    status: partial
+protocol_violation: false
+errors:
+  - User voice first passage FAIL, no integrated text, old generic STT connection error
+  - No-key native probes failed protocol, final exact variant WrongHttpVersion
+  - Intermediate probe compile failed due misplaced function; corrected before any network execution
+warnings:
+  - severity: HIGH
+    message: Authenticated first failure category irrecoverable from generic message; same HTTP1.0 cause not proven
+  - severity: HIGH
+    message: HTTP1.0 response origin and status unknown; no TLS/proxy/system modification or protocol bypass
+  - severity: HIGH
+    message: Corrected library built but running W03 exe unchanged; do not treat diagnostic as deployed or voice as fixed
+  - severity: MEDIUM
+    message: Windows Node25.8.2 outside specified Node22; no installation or target change
+test_results:
+  T006:
+    linux_js: {passed: 31, failed: 0}
+    linux_rust: {passed: 51, failed: 0}
+    windows_js: {passed: 31, failed: 0}
+    windows_rust_library: {passed: 9, failed: 0}
+    windows_integration_tests: not_rerun_to_protect_active_executable
+    frontend_typecheck_build_both_hosts: PASS
+    cargo_fmt_both_hosts: PASS
+    cargo_check_custom_protocol_library_both_hosts: PASS
+    windows_native_custom_protocol_library_build: PASS
+    windows_application_exe_link: NOT_EXECUTED
+    red_before_implementation: Expected missing-classifier compilation failure
+    failures: []
+transport_evidence:
+  windows_https_no_auth: HTTP200_with_verified_TLS_no_body_or_headers_reported
+  native_no_auth_network_runs: 3
+  final_variant: ProtocolError::WrongHttpVersion
+  request_http_version: HTTP1.1_verified_by_Windows_test
+  response_http_version: HTTP1.0_inferred_from_exact_parser_branch_and_valid_request
+  response_http_status: UNKNOWN
+  tls_native_handshake: PASS_for_no_auth_probes_before_HTTP_parsing
+  provider_or_root_failure: NOT_OBSERVED
+  authenticated_calls_by_agent: 0
+  microphone_activations_by_agent: 0
+  secrets_read_by_agent: 0
+readiness:
+  source_copy_allowlist_sha256: PASS_seven_files
+  corrected_diagnostic_active_in_running_ui: false
+  executable_pid_preserved: 16144
+  executable_sha256_unchanged: CC67C1CCC3E1917E3086A00F2C1FA062A514E5D23E0549064B5E49A52FC25923
+  voice_success: false
+  next_step: Confirm user Stop/Manual, then note recovery and clean closure before link; no voice retry
+hooks:
+  before_implement: no_extensions_yml
+  after_implement: no_extensions_yml

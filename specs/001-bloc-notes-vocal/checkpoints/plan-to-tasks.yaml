@@ -1,0 +1,273 @@
+metadata:
+  generated: "2026-10-30"
+  source_plan: "specs/001-bloc-notes-vocal/plan.md"
+  target_tasks: "specs/001-bloc-notes-vocal/tasks.md"
+  tasks_location: "Tâches autonomes matérialisées par /speckit.tasks ; 60 IDs et descriptions inline conservés."
+  inline_source: "specs/001-bloc-notes-vocal/plan.md"
+  materialized: "2026-10-30"
+  execution_notes: "Scaffold/build initial T005 et assertions de prototype T006 explicités dans tasks.md, sans tâche ajoutée."
+  parallel_tasks: ["T001", "T002", "T003", "T008", "T011", "T014", "T017", "T021", "T022"]
+  dependency_semantics: "Prédécesseurs directs, transitifs ; aucune dépendance déduite des numéros."
+summary:
+  total_plan_items: 28
+  covered_plan_items: 28
+  missing_plan_items: 0
+  coverage_percentage: 100.0
+  total_tasks_generated: 60
+  orphan_tasks: 0
+phases:
+  - phase_id: "Phase-1"
+    phase_name: "Setup et premier prototype"
+    items:
+      - item_id: "1.1"
+        description: "Reprise des décisions desktop"
+        tasks:
+          - {task_id: "T001", description: "Consigner reprise des décisions validées et pile retenue dans design-review.md", depends_on: []}
+      - item_id: "1.2"
+        description: "Vérification fournisseur et audio"
+        tasks:
+          - {task_id: "T002", description: "Préparer contrôle fournisseur et premier essai explicite dans provider-check.md, inconnues tarifaires signalées", depends_on: []}
+      - item_id: "1.3"
+        description: "Moyens de validation réels"
+        tasks:
+          - {task_id: "T003", description: "Établir moyens de recette et versions des deux desktops", depends_on: []}
+      - item_id: "1.4"
+        description: "Revue interne des interfaces"
+        tasks:
+          - {task_id: "T004", description: "Revoir les entités et interfaces inline dans design-review.md, sans artefact de design autonome", depends_on: ["T001", "T002", "T003"]}
+      - item_id: "1.5"
+        description: "Socle retenu, sans Git"
+        tasks:
+          - {task_id: "T005", description: "Créer manifestes, scripts, toolchain et lockfiles de la pile retenue sans Git", depends_on: ["T004"]}
+      - item_id: "1.6"
+        description: "Faisabilité et premier prototype sur deux desktops"
+        tasks:
+          - {task_id: "T006", description: "Réaliser tranche verticale CPAL/VAD/WSS/LLM strict et éditeur visuel protégé sur les deux desktops", depends_on: ["T005"]}
+          - {task_id: "T007", description: "Recetter prototype sur deux desktops et décider go/no-go", depends_on: ["T006"]}
+  - phase_id: "Phase-2"
+    phase_name: "Fondations transversales"
+    items:
+      - item_id: "2.1"
+        description: "Modèle minimal et autorité de mutation"
+        tasks:
+          - {task_id: "T008", description: "Tester sessions, révisions, idempotence et résultats retardés après changement de note", depends_on: ["T007"]}
+          - {task_id: "T009", description: "Implémenter entités, noteId et invalidation au changement de note dans la barrière native", depends_on: ["T008"]}
+          - {task_id: "T010", description: "Définir ports distincts STT et interprétation", depends_on: ["T009"]}
+      - item_id: "2.2"
+        description: "Fichiers et fermeture sûre"
+        tasks:
+          - {task_id: "T011", description: "Tester intégrité et fautes de sauvegarde", depends_on: ["T007"]}
+          - {task_id: "T012", description: "Implémenter fichiers locaux et conflits", depends_on: ["T009", "T011"]}
+          - {task_id: "T013", description: "Orchestrer fermeture arrêt/sauvegarde/fin", depends_on: ["T012"]}
+      - item_id: "2.3"
+        description: "Frontière UI et Markdown"
+        tasks:
+          - {task_id: "T014", description: "Tester IPC, rendu sûr, menus et bandeau simple S4.5", depends_on: ["T007"]}
+          - {task_id: "T015", description: "Implémenter commandes et capacités minimales", depends_on: ["T009", "T012", "T014"]}
+          - {task_id: "T016", description: "Créer fenêtre inspirée de WordPad, menus Fichier/Édition/Aide, bandeau de mise en forme et démarrage/arrêt vocal, note et états français", depends_on: ["T015"]}
+      - item_id: "2.4"
+        description: "Configuration et secrets natifs"
+        tasks:
+          - {task_id: "T017", description: "Tester politique de secrets et commande dédiée sans stockage clair ou mock", depends_on: ["T007"]}
+          - {task_id: "T018", description: "Intégrer keyring 3.6.3, backends explicites et IPC secret de courte durée", depends_on: ["T017"]}
+          - {task_id: "T019", description: "Implémenter configuration non sensible", depends_on: ["T010", "T018"]}
+      - item_id: "2.5"
+        description: "Adaptateurs Mistral indépendants"
+        tasks:
+          - {task_id: "T020", description: "Tester contrats fournisseurs simulés", depends_on: ["T010"]}
+          - {task_id: "T021", description: "Intégrer CPAL, normalisation 16 kHz, VAD, passages WSS et réconciliation done sans persistance", depends_on: ["T019", "T020"]}
+          - {task_id: "T022", description: "Intégrer mistral-large-latest json_schema strict et interruption prioritaire sans édition sur delta", depends_on: ["T019", "T020"]}
+      - item_id: "2.6"
+        description: "Écoute, interruptions et hors fenêtre"
+        tasks:
+          - {task_id: "T023", description: "Tester cycle de vie simulé", depends_on: ["T009"]}
+          - {task_id: "T024", description: "Implémenter surveillance OS et invalidation", depends_on: ["T013", "T021", "T023"]}
+          - {task_id: "T025", description: "Afficher l'état d'écoute dans l'application uniquement et relier la pause vocale en arrière-plan", depends_on: ["T016", "T022", "T024"]}
+      - item_id: "2.7"
+        description: "Gate des fondations"
+        tasks:
+          - {task_id: "T026", description: "Recetter fondations sur deux desktops", depends_on: ["T016", "T019", "T025"]}
+  - phase_id: "Phase-3"
+    phase_name: "US1 — construire une note fidèle"
+    items:
+      - item_id: "3.1"
+        description: "Intention et rédaction"
+        tasks:
+          - {task_id: "T027", description: "Préparer tests et corpus quatre usages", depends_on: ["T026"]}
+          - {task_id: "T028", description: "Modéliser intention éphémère", depends_on: ["T027"]}
+          - {task_id: "T029", description: "Orchestrer rédaction progressive", depends_on: ["T028"]}
+      - item_id: "3.2"
+        description: "Perception du résultat appliqué"
+        tasks:
+          - {task_id: "T030", description: "Afficher zones réelles sans vol de focus", depends_on: ["T029"]}
+          - {task_id: "T031", description: "Recetter US1 sur deux desktops", depends_on: ["T030"]}
+  - phase_id: "Phase-4"
+    phase_name: "US2 — piloter et corriger naturellement"
+    items:
+      - item_id: "4.1"
+        description: "Opérations ordonnées et ciblées"
+        tasks:
+          - {task_id: "T032", description: "Tester intentions mixtes ordonnées, absence de tout effet si ambiguïté et exclusion undo vocal", depends_on: ["T031"]}
+          - {task_id: "T033", description: "Valider toute l'intervention avant effet et ne rien exécuter si ambiguïté", depends_on: ["T032"]}
+      - item_id: "4.2"
+        description: "Clarification et épellation"
+        tasks:
+          - {task_id: "T034", description: "Implémenter lexique et tester épellation", depends_on: ["T033"]}
+          - {task_id: "T035", description: "Signaler l'ambiguïté dans l'application sans action ni reprise automatique ; précision vocale comme nouvelle demande", depends_on: ["T034"]}
+      - item_id: "4.3"
+        description: "Toutes les actions vocales"
+        tasks:
+          - {task_id: "T036", description: "Relier actions vocales de note et session", depends_on: ["T035"]}
+          - {task_id: "T037", description: "Recetter US2 sur deux desktops, ordre des intentions et absence d'effet si ambiguïté", depends_on: ["T036"]}
+  - phase_id: "Phase-5"
+    phase_name: "US3 — manuel puis reprise vocale"
+    items:
+      - item_id: "5.1"
+        description: "Transfert exclusif et undo manuel"
+        tasks:
+          - {task_id: "T038", description: "Tester modes, résultats retardés, priorité du cœur, acceptation/refus, resynchronisation et undo après refus", depends_on: ["T037"]}
+          - {task_id: "T039", description: "Intégrer ProseMirror et pont Markdown avec acquittement identifié, priorité canonique du cœur, récupération après refus et historique manuel confirmé, read-only sans history vocal", depends_on: ["T038"]}
+          - {task_id: "T040", description: "Intégrer transfert et reprise explicite", depends_on: ["T039"]}
+          - {task_id: "T041", description: "Recetter US3 sur deux desktops", depends_on: ["T040"]}
+  - phase_id: "Phase-6"
+    phase_name: "US4 — fichiers locaux intègres"
+    items:
+      - item_id: "6.1"
+        description: "Parcours de note unique"
+        tasks:
+          - {task_id: "T042", description: "Intégrer les actions Markdown et invalider les traitements précédents au changement de note", depends_on: ["T041"]}
+      - item_id: "6.2"
+        description: "Préservation et conflits réels"
+        tasks:
+          - {task_id: "T043", description: "Tester unsupported, conflits et résultats retardés après changement de note ou ouverture en échec", depends_on: ["T042"]}
+          - {task_id: "T044", description: "Recetter S4.1–S4.5, conflits et échecs sur deux desktops", depends_on: ["T043"]}
+  - phase_id: "Phase-7"
+    phase_name: "US6 — services, secrets et coûts"
+    items:
+      - item_id: "7.1"
+        description: "Préférences transparentes"
+        tasks:
+          - {task_id: "T045", description: "Intégrer préférences, champ masqué vidé après IPC et test externe informé", depends_on: ["T044"]}
+      - item_id: "7.2"
+        description: "Consommation et conditions externes"
+        tasks:
+          - {task_id: "T046", description: "Tester estimations et inconnues", depends_on: ["T045"]}
+          - {task_id: "T047", description: "Implémenter compteurs et estimation qualifiée", depends_on: ["T046"]}
+          - {task_id: "T048", description: "Documenter données et services choisis", depends_on: ["T047"]}
+          - {task_id: "T049", description: "Recetter US6 et traces sur deux desktops", depends_on: ["T048"]}
+  - phase_id: "Phase-8"
+    phase_name: "US8 — portabilité et mesures"
+    items:
+      - item_id: "8.1"
+        description: "Matrice complète et objectif macOS"
+        tasks:
+          - {task_id: "T050", description: "Préparer statut macOS sans annonce non vérifiée", depends_on: ["T049"]}
+          - {task_id: "T051", description: "Consolider preuves P1 sans remplacer les jalons", depends_on: ["T050"]}
+  - phase_id: "Phase-9"
+    phase_name: "US7 — diagnostic temporaire"
+    items:
+      - item_id: "9.1"
+        description: "Vue de transcription et purge"
+        tasks:
+          - {task_id: "T052", description: "Tester opt-in, qualification et purge", depends_on: ["T051"]}
+          - {task_id: "T053", description: "Implémenter diagnostic temporaire", depends_on: ["T052"]}
+          - {task_id: "T054", description: "Recetter US7 sur deux desktops", depends_on: ["T053"]}
+  - phase_id: "Phase-10"
+    phase_name: "Validation finale et sobriété"
+    items:
+      - item_id: "10.1"
+        description: "Robustesse et confidentialité"
+        tasks:
+          - {task_id: "T055", description: "Tester fautes et courses déterministes", depends_on: ["T054"]}
+          - {task_id: "T056", description: "Auditer traces avec données synthétiques", depends_on: ["T055"]}
+      - item_id: "10.2"
+        description: "Fidélité et recette finale sur deux systèmes"
+        tasks:
+          - {task_id: "T057", description: "Évaluer fidélité et erreurs quatre usages", depends_on: ["T056"]}
+          - {task_id: "T058", description: "Recetter SC-001 à SC-007 sur deux desktops", depends_on: ["T057"]}
+      - item_id: "10.3"
+        description: "Décision de livraison et recontrôle constitutionnel"
+        tasks:
+          - {task_id: "T059", description: "Soumettre objectifs mesurés et actualiser guide", depends_on: ["T058"]}
+          - {task_id: "T060", description: "Recontrôler gates, couverture et constitution", depends_on: ["T059"]}
+missing_plan_items: []
+orphan_tasks: []
+upstream_trace:
+  - {plan_item: "1.1", source_requirements: ["REQ-029", "REQ-050"], tasks: ["T001"]}
+  - {plan_item: "1.2", source_requirements: ["REQ-001", "REQ-039", "REQ-042", "REQ-045"], tasks: ["T002"]}
+  - {plan_item: "1.3", source_requirements: ["REQ-050", "REQ-051", "REQ-052"], tasks: ["T003"]}
+  - {plan_item: "1.4", source_requirements: ["REQ-017", "REQ-022", "REQ-024", "REQ-039", "REQ-041"], tasks: ["T004"]}
+  - {plan_item: "1.5", source_requirements: ["REQ-039", "REQ-050"], tasks: ["T005"]}
+  - {plan_item: "1.6", source_requirements: ["REQ-028", "REQ-029", "REQ-032", "REQ-033", "REQ-035", "REQ-036", "REQ-037", "REQ-041", "REQ-050", "REQ-052"], tasks: ["T006", "T007"]}
+  - {plan_item: "2.1", source_requirements: ["REQ-005", "REQ-015", "REQ-016", "REQ-017", "REQ-018", "REQ-019", "REQ-032", "REQ-039", "REQ-046"], tasks: ["T008", "T009", "T010"]}
+  - {plan_item: "2.2", source_requirements: ["REQ-020", "REQ-022", "REQ-023", "REQ-024", "REQ-036", "REQ-037"], tasks: ["T011", "T012", "T013"]}
+  - {plan_item: "2.3", source_requirements: ["REQ-004", "REQ-021", "REQ-022", "REQ-026", "REQ-027", "REQ-030"], tasks: ["T014", "T015", "T016"]}
+  - {plan_item: "2.4", source_requirements: ["REQ-038", "REQ-039", "REQ-040", "REQ-041", "REQ-042", "REQ-043", "REQ-045"], tasks: ["T017", "T018", "T019"]}
+  - {plan_item: "2.5", source_requirements: ["REQ-001", "REQ-033", "REQ-039", "REQ-043", "REQ-045", "REQ-048"], tasks: ["T020", "T021", "T022"]}
+  - {plan_item: "2.6", source_requirements: ["REQ-013", "REQ-028", "REQ-029", "REQ-030", "REQ-031", "REQ-032", "REQ-033", "REQ-034", "REQ-035", "REQ-036"], tasks: ["T023", "T024", "T025"]}
+  - {plan_item: "2.7", source_requirements: ["REQ-050", "REQ-052"], tasks: ["T026"]}
+  - {plan_item: "3.1", source_requirements: ["REQ-001", "REQ-002", "REQ-003", "REQ-010", "REQ-053"], tasks: ["T027", "T028", "T029"]}
+  - {plan_item: "3.2", source_requirements: ["REQ-025", "REQ-026", "REQ-027", "REQ-050", "REQ-052"], tasks: ["T030", "T031"]}
+  - {plan_item: "4.1", source_requirements: ["REQ-004", "REQ-005", "REQ-006", "REQ-007", "REQ-008", "REQ-009", "REQ-015"], tasks: ["T032", "T033"]}
+  - {plan_item: "4.2", source_requirements: ["REQ-007", "REQ-011", "REQ-012", "REQ-029", "REQ-046"], tasks: ["T034", "T035"]}
+  - {plan_item: "4.3", source_requirements: ["REQ-013", "REQ-020", "REQ-029", "REQ-031", "REQ-032", "REQ-038", "REQ-050", "REQ-052"], tasks: ["T036", "T037"]}
+  - {plan_item: "5.1", source_requirements: ["REQ-014", "REQ-015", "REQ-016", "REQ-017", "REQ-018", "REQ-019", "REQ-021", "REQ-022", "REQ-050", "REQ-052"], tasks: ["T038", "T039", "T040", "T041"]}
+  - {plan_item: "6.1", source_requirements: ["REQ-017", "REQ-020", "REQ-021", "REQ-023", "REQ-024"], tasks: ["T042"]}
+  - {plan_item: "6.2", source_requirements: ["REQ-017", "REQ-022", "REQ-023", "REQ-024", "REQ-036", "REQ-037", "REQ-050", "REQ-052"], tasks: ["T043", "T044"]}
+  - {plan_item: "7.1", source_requirements: ["REQ-038", "REQ-039", "REQ-040", "REQ-041", "REQ-042", "REQ-043"], tasks: ["T045"]}
+  - {plan_item: "7.2", source_requirements: ["REQ-044", "REQ-045", "REQ-046", "REQ-050", "REQ-052"], tasks: ["T046", "T047", "T048", "T049"]}
+  - {plan_item: "8.1", source_requirements: ["REQ-050", "REQ-051", "REQ-052", "REQ-053"], tasks: ["T050", "T051"]}
+  - {plan_item: "9.1", source_requirements: ["REQ-046", "REQ-047", "REQ-048", "REQ-049", "REQ-050", "REQ-052"], tasks: ["T052", "T053", "T054"]}
+  - {plan_item: "10.1", source_requirements: ["REQ-017", "REQ-024", "REQ-035", "REQ-036", "REQ-037", "REQ-041", "REQ-046", "REQ-049"], tasks: ["T055", "T056"]}
+  - {plan_item: "10.2", source_requirements: ["REQ-002", "REQ-007", "REQ-050", "REQ-051", "REQ-052", "REQ-053"], tasks: ["T057", "T058"]}
+  - {plan_item: "10.3", source_requirements: ["REQ-039", "REQ-045", "REQ-050", "REQ-051", "REQ-052"], tasks: ["T059", "T060"]}
+validation:
+  passed: true
+  traceability_passed: true
+  readiness: "READY_FOR_SPECKIT_ANALYZE"
+  product_readiness: "NON_EXÉCUTÉ"
+  implementation_tasks_executed: 0
+  dependency_graph: "Acyclique ; dépendances identiques dans tasks.md, les tâches inline et ce checkpoint."
+  errors: []
+  warnings:
+    - "G01 résolue par l'utilisateur : indicateur d'écoute et ambiguïtés dans l'application uniquement, sans indicateur hors fenêtre ni notification du bureau. Écoute en arrière-plan à vérifier."
+    - "Toutes les tâches sont futures, même les tests et le premier prototype."
+    - "Aucun build, installation, test produit ou essai desktop exécuté."
+    - "Chemins applicatifs futurs ; pile retenue et interfaces inline, revue T004 avant traduction en types."
+    - "Alias LLM mutable, accès compte, tarifs et conditions à vérifier lors des essais informés."
+verification:
+  date: "2026-10-30"
+  method: "Python3/PyYAML : comparaison tâches inline/autonomes/YAML, tables REQ et scénarios, chemins, liens/ancres, DAG et empreintes des seuls documents nommés ; sans runtime produit"
+  documentary_result: "PASS"
+  unique_sequential_tasks: 60
+  covered_plan_items: 28
+  inline_yaml_dependencies_match: true
+  dependency_graph_acyclic: true
+  requirement_table_and_upstream_match: true
+  scenario_count: 29
+  scenario_s45_covered: true
+  forbidden_deliverables_absent: true
+  unexplained_placeholders: 0
+  standalone_tasks_match_inline: true
+  dependency_inventory_matches: true
+  task_paths_project_relative: true
+  story_labels_match_spec: true
+  all_tasks_unchecked: true
+  parallel_task_count: 9
+  parallel_groups: [["T001", "T002", "T003"], ["T008", "T011", "T014", "T017"], ["T021", "T022"]]
+  longest_structural_chain_task_count: 47
+  local_links_and_anchors_checked: 11
+  source_integrity:
+    algorithm: "SHA-256"
+    result: "Identiques avant et après matérialisation ; uniquement les 9 sources documentaires nommées ci-dessous."
+    unchanged_sources:
+      ".github/agents/speckit.tasks.agent.md": "e3569f2fbdb99704b81e3647ce9e52fb812764d6b2590fc497a2c2130b43ba72"
+      ".specify/feature.json": "e0eadf848a1e86344cb1483998790a0ed3231af177a21ed67f97466fa8f3c1bf"
+      ".specify/templates/tasks-template.md": "c731575d8099b3f871861186fbd1a592b51b2ba57fb99e1a0dab439ff6d5608f"
+      ".specify/memory/constitution.md": "50dbb3a5258e3d506aaea03540a57be415eb105b9136537734b598b6132882dc"
+      "specs/001-bloc-notes-vocal/plan.md": "6debc10960887aac956955695f408a266cec3fa00f46dd8f187899591622ac13"
+      "specs/001-bloc-notes-vocal/spec.md": "145e0f8abbf57a92d507083d7b61798cc7854ca2cd66a9e8828c92a56e78a96a"
+      "specs/001-bloc-notes-vocal/research.md": "4511f4e67fc300b6ea8bcf3087cc111e5f79622fa9b73433ad2abde3c2984151"
+      "specs/001-bloc-notes-vocal/quickstart.md": "0a6e70ec8c8566460db71b99fc9aa569b5e2dd0859f89cc861d8a8539d5b0c6a"
+      "specs/001-bloc-notes-vocal/checkpoints/spec-to-plan.yaml": "25a452ca2745a718a3302e2e09cd7e5d9db218eaab294acb8adb7527d6888f93"
+  product_tests_executed: 0

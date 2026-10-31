@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Scaffold : aucune API générique filesystem, shell, réseau, notification ou tray.",
+  "windows": ["main"],
+  "permissions": []
+}

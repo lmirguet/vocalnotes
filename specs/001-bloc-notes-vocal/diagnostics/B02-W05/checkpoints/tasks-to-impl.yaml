@@ -1,0 +1,26 @@
+batch_id: B02-W05
+scope: Bounded T006/T007 Windows STT diagnostic, not feature completion
+status: partial
+tasks:
+  - id: T006
+    status: partial
+    outputs:
+      - src-tauri/src/platform/stt_transport.rs
+      - src-tauri/src/platform/mistral.rs
+      - src-tauri/examples/probe_stt_transport.rs
+      - tooling/windows-stt-check.ps1
+    evidence:
+      - Five new synthetic transport tests PASS Linux and Windows
+      - Windows library custom-protocol build PASS; active executable not linked or replaced
+    remaining:
+      - Confirm note recovery/clean closure before application link
+      - Resolve incompatible HTTP1.0 origin without TLS/proxy bypass
+  - id: T007
+    status: open
+    outputs: [docs/validation/prototype-windows.md]
+    evidence:
+      - User first voice recipe FAIL persisted after confirmed consent/key presence
+      - No authenticated retest, no microphone activation by agent
+    remaining:
+      - Stop/Manual confirmation and new contextualized consent before any new voice recipe
+      - GNOME deferred; no multiplatform GO

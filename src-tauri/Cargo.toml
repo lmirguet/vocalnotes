@@ -1,0 +1,46 @@
+[package]
+name = "vocalnotes"
+version = "0.1.0"
+description = "Bloc-notes vocal intelligent"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+
+[lib]
+name = "vocalnotes_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+pulldown-cmark = "0.13"
+zeroize = "1.8"
+base64 = "0.22"
+futures-util = { version = "0.3", features = ["sink"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+tokio = { version = "=1.54.1", features = ["time", "sync", "rt-multi-thread", "macros"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+rubato = "0.16"
+webrtc-vad = "0.4"
+rtrb = "0.3"
+cpal = "=0.15.3"
+
+[dev-dependencies]
+# Type-check the isolated Windows receiver on Linux without pretending to run Windows.
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Win32_System_Power", "Win32_System_LibraryLoader"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "=3.6.3", features = ["sync-secret-service", "crypto-rust"] }
+dbus = "=0.9.12"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "=3.6.3", features = ["windows-native"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Win32_System_Power", "Win32_System_LibraryLoader"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "=3.6.3", features = ["apple-native"] }

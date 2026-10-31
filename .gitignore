@@ -1,0 +1,22 @@
+# Confidential inputs: never stage, copy to assets or inspect through tooling.
+mistral-key.txt
+file_mistral-key.txt
+*-key.txt
+*.key
+.env*
+
+node_modules/
+dist/
+build/
+target/
+coverage/
+*.log
+*.rs.bk
+*.rlib
+*.prof*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

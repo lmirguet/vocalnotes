@@ -1,0 +1,67 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #20232a;
+  background: #e8ebef;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+}
+
+main {
+  max-width: 56rem;
+  margin: auto;
+  padding: 2rem;
+  background: white;
+  border: 1px solid #9ca3af;
+  border-radius: 0.25rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+[role="status"] {
+  border-inline-start: 0.3rem solid #486489;
+  padding-inline-start: 1rem;
+  font-weight: 600;
+}
+[role="toolbar"] { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .7rem; }
+.menu-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: .15rem;
+  margin-block: .7rem;
+  padding: .15rem;
+  background: #f3f4f6;
+  border-block: 1px solid #9ca3af;
+}
+.menu-group { position: relative; }
+.menu-trigger { border: 1px solid transparent; background: transparent; padding: .35rem .7rem; }
+.menu-trigger:hover, .menu-trigger[aria-expanded="true"] { background: #dce7f5; border-color: #486489; }
+.menu-trigger:focus-visible, .menu-panel :focus-visible { outline: 2px solid #486489; outline-offset: 2px; }
+.menu-panel {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-start: 0;
+  z-index: 10;
+  width: min(23rem, calc(100vw - 5rem));
+  padding: .5rem;
+  background: white;
+  border: 1px solid #9ca3af;
+  box-shadow: 0 .3rem .7rem #0003;
+}
+.menu-panel[hidden] { display: none; }
+.menu-panel button, .menu-panel input { display: block; box-sizing: border-box; width: 100%; margin-block: .3rem; }
+.menu-panel button { text-align: start; padding: .35rem .5rem; }
+.menu-panel p { margin: .3rem; }
+@media (max-width: 40rem) {
+  body { padding: .5rem; }
+  main { padding: .5rem; }
+  .menu-group:last-child .menu-panel { inset-inline-start: auto; inset-inline-end: 0; }
+}
+button, input { font: inherit; }
+.ProseMirror { min-height: 20rem; background: white; color: #111; border: 1px solid #666; padding: 1.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-opaque] { border: 1px dashed #666; background: #eee; padding: .7rem; white-space: pre-wrap; }
+[role="status"] { border-inline-start: .25rem solid #555; padding-inline-start: .5rem; }
