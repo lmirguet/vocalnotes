@@ -1,3 +1,72 @@
+**Bilan T031 — passage de recette terminé, tâche encore ouverte.** Application
+fermée par l’utilisateur, absence du processus vérifiée. Contrôles ciblés réussis
+sur les versions successives corrigées ; deux éditions refusées pour ancre périmée
+et texte attendu absent restent à examiner. Déplacement/suppression, position de
+lecture et qualification complète des contrôles/mesures restent à terminer.
+Aucun GO T031 ni passage à T032. [Bilan](../../docs/validation/us1-gnome.md).
+
+**T031 — repérage avec surlignage temporaire (demande utilisateur).**
+Défilement confirmé ; ajout d’un fond et d’un contour pendant deux secondes sur
+le bloc repéré au clic, sans modifier le texte ni la sélection. Sources vérifiées
+(54 tests JS, build web et check embarqué PASS) ; nouvelle recette visuelle requise.
+Ancienne fenêtre fermée par l’utilisateur ; version avec surlignage reconstruite et ouverte en manuel. T031 reste ouverte.
+
+**T031 — changement d’intention corrigé, essai ciblé confirmé.**
+L’utilisateur valide e-mail/cordial → synthèse concise/neutre et conservation de
+la réserve sur le binaire `1a98ba35…bd81c`. Le reste de la recette T031 reste ouvert.
+
+**T031 — changement d’intention en échec natif, correction à recetter.**
+Premier passage traité en éditions seules, sans action de profil. Consigne et
+exemple renforcés pour exiger le changement explicite de forme/ton ; bilan
+français distinct et diagnostic technique modifié/inchangé, sans contenu.
+148 tests Rust PASS ; test de changement puis réouverture du fichier inclus.
+La version corrigée est reconstruite et ouverte en manuel pour nouvel essai ; T031 reste ouverte.
+
+**T031 — intention attachée à la note (demande du 2026-10-31).** Le profil
+reste après arrêt et nouveau démarrage vocal ; il est enregistré dans un commentaire
+Markdown versionné, séparé du corps, avec la même transaction et les mêmes conflits.
+147 tests Rust et 54 JS PASS. [Format et garanties](../../docs/validation/note-intention-format.md).
+Cette règle remplace les mentions historiques « intention temporaire/purgée à l’arrêt ».
+Nouvelle recette native en cours ; ancienne fenêtre fermée par l’utilisateur, nouveau binaire ouvert en manuel.
+
+**Complément T031 — intention visible (2026-10-31).** Premier essai e-mail/ajout
+confirmé par l’utilisateur. Champ d’intention en lecture seule ajouté au-dessus
+de la note sur demande explicite ; profil exposé uniquement à la fenêtre, sans
+persistance. 144 tests Rust et 54 tests JS PASS. Build web et natif prêts ;
+ancienne fenêtre fermée par l’utilisateur, nouvelle version ouverte en manuel.
+T031 reste ouverte ; nouvel affichage pas encore recetté.
+
+**B12-US1, 2026-10-31 — T028–T030 terminées, T031 en recette GNOME.**
+Profil d’intention structuré et éphémère, orchestration de rédaction commune,
+échecs techniques séparés et repères des changements réellement appliqués.
+144 tests Rust et 52 tests JS PASS ; build web et natif embarqué PASS.
+[Preuves et recette en cours](../../docs/validation/us1-gnome.md).
+La fenêtre est ouverte en manuel, microphone arrêté au lancement. Aucun GO T031
+avant les confirmations utilisateur. Windows et veille réelle restent exclus.
+Ce bilan prévaut sur les états historiques ci-dessous.
+
+**T027 terminée — corpus synthétique (2026-10-31).** Dix scénarios, quatre
+usages, six tests de décisions/nuances sur le décodeur et le commit réels.
+135 tests Rust PASS. Réponses scriptées, sans micro ni fournisseur ; aucune
+validation générale de précision STT/LLM. [Corpus et limites](../../tests/fixtures/README.md).
+Prochaine étape : T028 (modèle d’intention). Ce bilan B11 prévaut sur les états historiques.
+
+**T026 — recette locale terminée (2026-10-31) :** fondations validées sur
+GNOME/Wayland avec le micro NoMachine. Application fermée, modèle STT habituel
+rétabli et note sauvegardée. Réserve : précision de transcription ; aucune
+garantie générale de fidélité. Windows et veille réelle exclus par l’utilisateur.
+Les fautes matérielles non exercées restent qualifiées dans la
+[matrice](../../docs/validation/foundations-gnome.md) et les
+[mesures](../../docs/validation/foundations-metrics.md). Prochaine tâche : T027.
+Ce bilan B10 prévaut sur les états historiques ci-dessous.
+
+**Reprise B09-LIFECYCLE.** L’état visible distingue initialisation, écoute réelle,
+activité du traitement et pause/manuel. Le bouton « Mettre l’écoute en pause »
+utilise l’arrêt partagé ; une reprise reste explicite. Après reconstruction,
+recetter T026 sur GNOME/Wayland (Windows et veille réelle exclus), en suivant
+[les points de contrôle](../../docs/validation/lifecycle-gnome.md).
+Les recettes historiques ci-dessous ne valident pas automatiquement ce nouveau lot.
+
 # Guide de validation — prototypes et jalons futurs
 
 **Mise à jour B08-ADAPTERS (sources).** La capture et la normalisation partagées

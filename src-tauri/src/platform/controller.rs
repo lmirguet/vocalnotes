@@ -1,21 +1,20 @@
 //! Continuous prototype orchestration. Buffers are memory-only and fail closed.
 use super::{
-    lifecycle::LifecycleGuard,
     pipeline::{PassageGate, PassageStep},
     probe::{Probe, Ticket},
+    session_devices::{CaptureStream, NativeDevices, SessionDevices, StopCapture},
 };
 use crate::adapters::{
     mistral_interpreter::MistralInterpreter,
     mistral_stt::{MistralStt, SttReader},
 };
-use crate::audio::{
-    capture::{CaptureControl, NativeCapture},
-    normalization::AudioFrame,
-};
+#[cfg(test)]
+use crate::audio::capture::NativeCapture;
+use crate::audio::normalization::AudioFrame;
 use crate::config::preferences::{ModelPreferences, Preferences, PreferencesStore};
 use crate::ports::stt::SttEvent;
 use crate::ports::{
-    interpreter::{InterpretationContext, Interpreter, Interruption},
+    interpreter::{Interpreter, Interruption},
     stt::{SttInput, SttOutput},
 };
 use std::sync::{
@@ -28,7 +27,7 @@ use tokio::time::{Duration, sleep};
 
 struct Active {
     cancel: watch::Sender<bool>,
-    capture: Option<CaptureControl>,
+    capture: Option<Arc<dyn StopCapture>>,
     ticket: Ticket,
     opening_stop: Arc<AtomicBool>,
 }
@@ -149,7 +148,7 @@ impl Controller {
         }
     }
 
-    fn stop_current(&self, ticket: &Ticket, pause: bool, message: &'static str) {
+    fn stop_current(&self, ticket: &Ticket, pause: bool, message: &'static str, failure: bool) {
         if let Ok(mut active) = self.active.lock() {
             if let Ok(mut core) = self.core.lock() {
                 if !core.same_session(ticket) {
@@ -167,6 +166,9 @@ impl Controller {
                     core.pause();
                 } else {
                     core.stop(message);
+                    if failure {
+                        core.voice_error();
+                    }
                 }
             }
         }
@@ -190,6 +192,15 @@ impl Controller {
     }
 
     pub fn start_explicit(&self, resume: bool) -> Result<(), &'static str> {
+        self.start_with_devices(resume, NativeDevices)
+    }
+
+    /// Rust-only dependency injection; the production IPC always selects NativeDevices.
+    pub fn start_with_devices<D: SessionDevices>(
+        &self,
+        resume: bool,
+        devices: D,
+    ) -> Result<(), &'static str> {
         let mut active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
         if active.is_some() {
             return Err("Session déjà active ou en initialisation.");
@@ -212,10 +223,10 @@ impl Controller {
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
             let result = this
-                .session(ticket.clone(), receiver, opening_stop, models)
+                .session(ticket.clone(), receiver, opening_stop, models, devices)
                 .await;
             if let Err(message) = result {
-                this.stop_current(&ticket, false, message);
+                this.stop_current(&ticket, false, message, true);
             }
         });
         Ok(())
@@ -229,25 +240,24 @@ impl Controller {
         }
     }
 
-    async fn session(
+    async fn session<D: SessionDevices>(
         &self,
         ticket: Ticket,
         mut cancel: watch::Receiver<bool>,
         opening_stop: Arc<AtomicBool>,
         models: ModelPreferences,
+        devices: D,
     ) -> Result<(), &'static str> {
         let os_controller = self.clone();
         let os_ticket = ticket.clone();
-        let guard = tokio::task::spawn_blocking(move || LifecycleGuard::start(move || {
+        let guard = devices.monitor(opening_stop.clone(), Arc::new(move || {
             os_controller.stop_current(&os_ticket, false,
-                "Verrouillage, veille ou perte de surveillance OS : manuel, passages en attente non intégrés ; aucune auto-reprise.");
-        })).await.map_err(|_| "Surveillance OS indisponible.")??;
+                "Verrouillage, veille ou perte de surveillance OS : manuel, passages en attente non intégrés ; aucune auto-reprise.", false);
+        })).await?;
         if *cancel.borrow() {
             return Ok(());
         }
-        let has_key = tokio::task::spawn_blocking(super::secrets::presence)
-            .await
-            .map_err(|_| "Trousseau indisponible : vocal refusé.")??;
+        let has_key = devices.key_present().await?;
         if !has_key {
             return Err("Clé Mistral absente du trousseau : vocal refusé avant capture.");
         }
@@ -255,17 +265,15 @@ impl Controller {
             return Ok(());
         }
         // Guard is established before CPAL can open a device.
-        let capture =
-            tokio::task::spawn_blocking(move || NativeCapture::start_guarded(opening_stop))
-                .await
-                .map_err(|_| "Microphone indisponible.")??;
+        let capture = devices.capture(opening_stop).await?;
         {
             let mut active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
-            let core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+            let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
             if !core.same_session(&ticket) {
                 return Ok(());
             }
             active.as_mut().ok_or("Session invalidée.")?.capture = Some(capture.control());
+            core.listening_ready();
         }
         self.update(&ticket, |core| {
             core.message(
@@ -278,18 +286,46 @@ impl Controller {
         let work = async {
             tokio::try_join!(
                 capture_frames(capture, frames_tx),
-                self.transcribe(&ticket, frames_rx, final_tx, priority_tx, &models.stt),
+                async {
+                    self.transcribe(&ticket, frames_rx, final_tx, priority_tx, &models.stt)
+                        .await
+                        .map_err(|reason| {
+                            self.update(&ticket, |core| core.failure_stage("recognition"));
+                            reason
+                        })
+                },
                 self.interpret(&ticket, final_rx, &models.llm),
-                self.priority(&ticket, priority_rx, &models.llm),
+                async {
+                    self.priority(&ticket, priority_rx, &models.llm)
+                        .await
+                        .map_err(|reason| {
+                            self.update(&ticket, |core| core.failure_stage("interpretation"));
+                            reason
+                        })
+                },
             )?;
             Ok(())
         };
+        let result = self.supervise(&ticket, &mut cancel, work).await;
+        drop(guard); // Joins monitor; dropping capture future stops and joins CPAL worker.
+        result
+    }
+
+    async fn supervise(
+        &self,
+        ticket: &Ticket,
+        cancel: &mut watch::Receiver<bool>,
+        work: impl std::future::Future<Output = Result<(), &'static str>>,
+    ) -> Result<(), &'static str> {
         let result = tokio::select! {
             biased;
             _ = cancel.changed() => Ok(()),
             result = work => result,
         };
-        drop(guard); // Joins monitor; dropping capture future stops and joins CPAL worker.
+        if let Err(message) = result {
+            // Every worker error, including provider/network loss, shares this barrier.
+            self.stop_current(ticket, false, message, true);
+        }
         result
     }
 
@@ -384,44 +420,56 @@ impl Controller {
                 crate::diagnostics::event("STT : final vide ignoré, aucun appel LLM ordinaire");
                 continue;
             }
-            let (ticket, intention, candidates) = {
+            let request = {
                 let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
                 if !core.same_session(session) {
                     return Ok(());
                 }
                 sequence += 1;
-                let ticket = core.voice_ticket_for(sequence, passage_id)?;
-                let candidates = core.candidates();
+                let request =
+                    crate::app::drafting::DraftingRequest::prepare(&mut core, sequence, passage_id)
+                        .map_err(|stage| {
+                            core.failure_stage("application");
+                            stage.message()
+                        })?;
                 core.measure("llm", 1, "");
+                core.processing();
                 core.message("Traitement du passage finalisé — aucune édition sur provisoire.");
-                (
-                    ticket,
-                    core.intention().to_owned(),
-                    InterpretationContext {
-                        blocks: candidates,
-                        save_available: core.can_save(),
-                    },
-                )
+                request
             };
             let llm_started = Instant::now();
-            let (response, model) =
-                Interpreter::interpret_final(&interpreter, &text, &intention, candidates).await?;
+            let reply = request
+                .interpret(&interpreter, &text)
+                .await
+                .map_err(|stage| {
+                    self.update(session, |core| {
+                        core.failure_stage(match stage {
+                            crate::app::drafting::FailureStage::Recognition => "recognition",
+                            crate::app::drafting::FailureStage::Interpretation => "interpretation",
+                            crate::app::drafting::FailureStage::Application => "application",
+                        })
+                    });
+                    stage.message()
+                })?;
             let terminal = {
                 let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
                 if !core.same_session(session) {
                     return Ok(());
                 }
-                core.measure("llm_model", 0, &model);
+                core.measure("llm_model", 0, &reply.model);
                 core.measure("llm_ms", llm_started.elapsed().as_millis() as u64, "");
                 let before = core.snapshot();
                 let commit_started = Instant::now();
-                match core.commit_voice(&ticket, response) {
+                match reply.commit(&mut core) {
                     Ok(()) => {
                         if core.snapshot().message == before.message {
                             core.message("Passage finalisé traité ; écoute continue.");
                         }
                     }
-                    Err(message) => core.message(message),
+                    Err(failure) => {
+                        core.failure_stage("application");
+                        core.message(failure.reason);
+                    }
                 }
                 let mode = core.snapshot().mode;
                 core.measure("commit_us", commit_started.elapsed().as_micros() as u64, "");
@@ -473,7 +521,7 @@ impl Controller {
             });
             if action != Interruption::None {
                 self.stop_current(ticket, action == Interruption::Pause,
-                    "Interruption prioritaire ; micro arrêté, passages en attente non intégrés, reprise explicite.");
+                    "Interruption prioritaire ; micro arrêté, passages en attente non intégrés, reprise explicite.", false);
                 return Ok(());
             }
         }
@@ -481,14 +529,11 @@ impl Controller {
 }
 
 async fn capture_frames(
-    capture: NativeCapture,
+    capture: Box<dyn CaptureStream>,
     frames: mpsc::Sender<AudioFrame>,
 ) -> Result<(), &'static str> {
     loop {
-        if let Some(error) = capture.failure() {
-            return Err(error);
-        }
-        while let Ok(frame) = capture.frames.try_recv() {
+        while let Some(frame) = capture.next_frame()? {
             frames.try_send(frame).map_err(
                 |_| "Saturation rotation audio : arrêt, passages non intégrés ; aucun spool.",
             )?;
@@ -553,7 +598,7 @@ mod tests {
         let (old, _, _) = active(&controller);
         controller.stop(false, "arrêt");
         let (new, receiver, flag) = active(&controller);
-        controller.stop_current(&old, false, "erreur tardive");
+        controller.stop_current(&old, false, "erreur tardive", true);
         controller.finish_device(&old);
         assert!(!*receiver.borrow());
         assert!(!flag.load(Ordering::Acquire));
@@ -570,5 +615,31 @@ mod tests {
         assert!(append_provisional(&sender, &"x".repeat(4096)).is_err());
         sender.send_replace(None);
         assert!(receiver.borrow().is_none());
+    }
+    #[tokio::test]
+    async fn service_failure_supervisor_invalidates_and_cancellation_drops_pending_work() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let (ticket, mut receiver, flag) = active(&controller);
+        assert!(
+            controller
+                .supervise(&ticket, &mut receiver, async {
+                    Err("Service indisponible : passage non intégré.")
+                })
+                .await
+                .is_err()
+        );
+        assert!(flag.load(Ordering::Acquire));
+        assert_eq!(
+            controller.core.lock().unwrap().snapshot().voice_activity,
+            "error"
+        );
+        assert_eq!(controller.core.lock().unwrap().snapshot().mode, "manual");
+        let (ticket, mut receiver, _) = active(&controller);
+        controller.stop(true, "pause");
+        controller
+            .supervise(&ticket, &mut receiver, std::future::pending())
+            .await
+            .unwrap();
+        assert_eq!(controller.core.lock().unwrap().snapshot().mode, "paused");
     }
 }

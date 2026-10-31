@@ -20,7 +20,8 @@ export function renderStatus(status: HTMLElement, canonical: Snapshot, projected
       ` Bilan vocal : ${canonical.voiceApplied ?? 0} modification(s), ${canonical.voiceClarifications ?? 0} clarification(s), ` +
       `${canonical.voiceRejected ?? 0} refus, ${canonical.voiceNoChange ?? 0} sans modification. ` +
       (canonical.lastVoiceResult ?? "Aucun résultat vocal traité.") +
-      ` Derniers délais : flush→done ${canonical.lastSttFinalMs ?? "non mesuré"} ms ; ` +
+      (canonical.failureStage ? ` Dernier échec technique : ${canonical.failureStage === "recognition" ? "reconnaissance STT" : canonical.failureStage === "interpretation" ? "interprétation LLM" : "application de la modification"}.` : "") +
+      ` Derniers délais : fin audio→done ${canonical.lastSttFinalMs ?? "non mesuré"} ms ; ` +
       `LLM ${canonical.lastLlmMs ?? "non mesuré"} ms ; priorité ${canonical.lastPriorityMs ?? "non mesuré"} ms ; ` +
       `commit ${canonical.lastCommitUs ?? "non mesuré"} µs.` +
       (pending ? " — projection en attente, non sauvegardée." : canonical.dirty ? " — note modifiée, non sauvegardée." : "");

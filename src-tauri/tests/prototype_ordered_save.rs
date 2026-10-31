@@ -5,6 +5,9 @@ fn actions() -> Vec<Action> {
     vec![
         Action::DraftingIntent {
             text: "courriel formel".into(),
+            form: String::new(),
+            tone: String::new(),
+            context: String::new(),
         },
         Action::Edit {
             operation: EditOperation::Replace {
@@ -47,11 +50,14 @@ fn ordered_intention_edit_save_writes_only_prevalidated_accepted_content() {
         .map(|p| p.unwrap().path())
         .collect();
     assert_eq!(paths.len(), 1);
-    assert_eq!(std::fs::read_to_string(original).unwrap(), "après");
+    let document = std::fs::read_to_string(original).unwrap();
+    let (body, intention) = vocalnotes_lib::storage::note_document::decode(&document).unwrap();
+    assert_eq!(body, "après");
+    assert_eq!(intention.purpose(), "courriel formel");
     assert!(
         paths
             .iter()
-            .any(|p| std::fs::read_to_string(p).unwrap() == "après")
+            .any(|p| std::fs::read_to_string(p).unwrap() == document)
     );
     for path in paths {
         std::fs::remove_file(path).unwrap();

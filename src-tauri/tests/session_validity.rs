@@ -59,6 +59,9 @@ fn pause_resume_invalidates_generation_but_preserves_intention() {
             message: "".into(),
             actions: vec![Action::DraftingIntent {
                 text: "ton sobre".into(),
+                form: String::new(),
+                tone: String::new(),
+                context: String::new(),
             }],
         },
     )
@@ -73,7 +76,7 @@ fn pause_resume_invalidates_generation_but_preserves_intention() {
     assert!(note.snapshot().generation > before.generation);
     assert!(note.commit_voice(&late, edit("texte", "ancien")).is_err());
     note.stop("arrêt");
-    assert_eq!(note.intention(), "");
+    assert_eq!(note.intention(), "ton sobre");
     assert!(note.start_voice(true).is_err());
 }
 

@@ -1,10 +1,15 @@
 //! Canonical native note authority, shared by the prototype and foundations.
 use super::session::{Session, Ticket};
+use crate::domain::{
+    change::{ChangeArea, ChangeFeedback, track_patch},
+    intention::DraftingIntention,
+};
 pub use crate::ports::interpreter::{Action, Intervention};
 use crate::ports::interpreter::{
     Anchor, Candidate, Edge, EditOperation, SessionCommand, Status, Target,
 };
 use crate::storage::markdown_file::{MarkdownFile, SaveError, SaveOutcome};
+use crate::storage::note_document;
 use pulldown_cmark::{Event, Options, Parser, Tag};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
@@ -30,6 +35,11 @@ pub struct Snapshot {
     pub revision: u64,
     pub generation: u64,
     pub mode: &'static str,
+    pub listening_state: &'static str,
+    pub drafting_intention: Option<DraftingIntention>,
+    pub change_feedback: Option<ChangeFeedback>,
+    pub failure_stage: Option<&'static str>,
+    pub voice_activity: &'static str,
     pub source: String,
     pub dirty: bool,
     pub message: String,
@@ -88,7 +98,7 @@ pub struct Ack {
 pub struct Note {
     state: Snapshot,
     confirmed: HashMap<String, Proposal>,
-    intention: String,
+    intention: DraftingIntention,
     session: Session,
     destination: Option<std::path::PathBuf>,
     storage: Option<MarkdownFile>,
@@ -252,6 +262,11 @@ impl Note {
                 revision: 0,
                 generation: 1,
                 mode: "manual",
+                listening_state: "stopped",
+                drafting_intention: None,
+                change_feedback: None,
+                failure_stage: None,
+                voice_activity: "idle",
                 blocks: blocks(&source),
                 source,
                 dirty: false,
@@ -278,7 +293,7 @@ impl Note {
                 storage_message: String::new(),
             },
             confirmed: HashMap::new(),
-            intention: String::new(),
+            intention: DraftingIntention::default(),
             session: Session::default(),
             destination: None,
             storage: None,
@@ -287,10 +302,13 @@ impl Note {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        self.state.clone()
+        let mut snapshot = self.state.clone();
+        snapshot.drafting_intention = (!self.intention.is_empty()).then(|| self.intention.clone());
+        snapshot
     }
 
     fn publish(&mut self, source: String) {
+        self.state.change_feedback = None;
         self.state.source = source;
         self.state.blocks = blocks(&self.state.source);
         self.state.revision += 1;
@@ -398,8 +416,8 @@ impl Note {
             return Err("État incompatible avec le démarrage explicite.");
         }
         self.clear_transcript();
+        self.state.failure_stage = None;
         if !resume {
-            self.intention.clear();
             self.state.session_id += 1;
         }
         self.state.generation += 1;
@@ -407,8 +425,30 @@ impl Note {
         self.confirmed.clear();
         self.session = Session::default();
         self.state.mode = "voice";
+        self.state.listening_state = "starting";
+        self.state.voice_activity = "idle";
         self.state.message = "Écoute — Mistral STT/LLM ; coût inconnu.".into();
         Ok(())
+    }
+
+    pub fn processing(&mut self) {
+        if self.state.mode == "voice" {
+            self.state.voice_activity = "processing";
+        }
+    }
+
+    pub fn failure_stage(&mut self, stage: &'static str) {
+        self.state.failure_stage = Some(stage);
+    }
+
+    pub fn voice_error(&mut self) {
+        self.state.voice_activity = "error";
+    }
+
+    pub fn listening_ready(&mut self) {
+        if self.state.mode == "voice" {
+            self.state.listening_state = "listening";
+        }
     }
 
     pub fn pause(&mut self) {
@@ -416,6 +456,8 @@ impl Note {
         self.state.generation += 1;
         self.state.manual_period += 1;
         self.state.mode = "paused";
+        self.state.listening_state = "stopped";
+        self.state.voice_activity = "idle";
         self.state.message =
             "Pause — micro arrêté, passages en attente non intégrés ; reprise explicite.".into();
         self.confirmed.clear();
@@ -423,6 +465,10 @@ impl Note {
     }
 
     pub fn intention(&self) -> &str {
+        self.intention.purpose()
+    }
+
+    pub fn drafting_intention(&self) -> &DraftingIntention {
         &self.intention
     }
 
@@ -469,8 +515,16 @@ impl Note {
             return Err(reason);
         }
         let clarification = response.status == Status::Clarify;
+        let previous_intention = self.intention.clone();
         let revision = self.state.revision;
         let result = self.intervene(ticket, response);
+        self.state.voice_activity = if result.is_err() {
+            "error"
+        } else if clarification {
+            "clarification"
+        } else {
+            "idle"
+        };
         self.state.last_voice_result = match result {
             Ok(()) if clarification => {
                 self.state.voice_clarifications += 1;
@@ -478,7 +532,20 @@ impl Note {
             }
             Ok(()) if self.state.revision != revision => {
                 self.state.voice_applied += 1;
-                "Modification de la note appliquée."
+                if self.intention != previous_intention {
+                    if self
+                        .state
+                        .change_feedback
+                        .as_ref()
+                        .is_some_and(|change| change.revision == self.state.revision)
+                    {
+                        "Note et intention de rédaction mises à jour."
+                    } else {
+                        "Intention de rédaction mise à jour."
+                    }
+                } else {
+                    "Modification de la note appliquée."
+                }
             }
             Ok(()) => {
                 self.state.voice_no_change += 1;
@@ -534,9 +601,10 @@ impl Note {
         self.state.generation += 1;
         self.state.manual_period += 1;
         self.state.mode = "manual";
+        self.state.listening_state = "stopped";
+        self.state.voice_activity = "idle";
         self.state.message = message.into();
         self.confirmed.clear();
-        self.intention.clear();
         self.session = Session::default();
     }
 
@@ -545,6 +613,8 @@ impl Note {
     }
 
     pub fn loaded(&mut self, source: String) {
+        self.intention.clear();
+        self.state.change_feedback = None;
         self.state.note_id += 1;
         self.state.source = source;
         self.state.revision = 0;
@@ -563,7 +633,9 @@ impl Note {
         }
         self.invalidate_for_open();
         let (storage, source) = MarkdownFile::open(path).map_err(|e| e.message)?;
+        let (source, intention) = note_document::decode(&source)?;
         self.loaded(source);
+        self.intention = intention;
         self.destination = Some(path.to_owned());
         self.storage = Some(storage);
         self.state.message =
@@ -582,7 +654,10 @@ impl Note {
     }
 
     pub fn save_copy(&mut self, path: &Path) -> Result<(), &'static str> {
-        let storage = match MarkdownFile::create_copy(path, &self.state.source) {
+        let storage = match MarkdownFile::create_copy(
+            path,
+            &note_document::encode(&self.state.source, &self.intention),
+        ) {
             Ok(file) => file,
             Err(error) => {
                 let message = error.message;
@@ -642,7 +717,7 @@ impl Note {
         if !self.state.dirty {
             return Ok(());
         }
-        match storage.save(&self.state.source) {
+        match storage.save(&note_document::encode(&self.state.source, &self.intention)) {
             Ok(SaveOutcome::Saved) => {
                 self.state.dirty = false;
                 self.state.storage_message.clear();
@@ -768,14 +843,26 @@ impl Note {
         let mut source = self.state.source.clone();
         let mut targets = WorkingTargets::new(&source);
         let mut intention = self.intention.clone();
+        let mut intention_reviewed = false;
+        let mut change_areas = Vec::new();
         let mut terminal = None;
         for action in response.actions {
             if terminal.is_some() {
                 return Err("Action après barrière terminale : aucun effet.");
             }
             match action {
-                Action::Edit { operation } => targets.edit(&mut source, operation)?,
-                Action::DraftingIntent { text } if text.len() <= 4096 => intention = text,
+                Action::Edit { operation } => {
+                    targets.edit(&mut source, operation, &mut change_areas)?
+                }
+                Action::DraftingIntent {
+                    text,
+                    form,
+                    tone,
+                    context,
+                } => {
+                    intention_reviewed = true;
+                    intention = DraftingIntention::new(text, form, tone, context)?;
+                }
                 Action::SessionAction {
                     command:
                         command @ (SessionCommand::Pause {}
@@ -797,10 +884,30 @@ impl Note {
                 _ => return Err("Action non disponible dans ce prototype : aucun effet."),
             }
         }
+        let intention_changed = self.intention != intention;
+
+        self.intention = intention;
+        if intention_reviewed {
+            crate::diagnostics::event(if intention_changed {
+                "Intention de rédaction : profil modifié."
+            } else {
+                "Intention de rédaction : profil inchangé."
+            });
+        }
         if source != self.state.source {
             self.publish(source);
+            self.state.change_feedback = Some(ChangeFeedback {
+                revision: self.state.revision,
+                areas: change_areas,
+            });
+        } else if intention_changed {
+            self.state.dirty = true;
+            self.state.revision += 1;
+            self.state.change_feedback = None;
+            if self.storage.is_some() {
+                let _ = self.save_current();
+            }
         }
-        self.intention = intention;
         match terminal {
             Some(SessionCommand::Save {}) => self.save_current()?,
             Some(SessionCommand::Pause {}) => self.pause(),
@@ -876,7 +983,18 @@ impl WorkingTargets {
         })
     }
 
-    fn edit(&mut self, source: &mut String, operation: EditOperation) -> Result<(), &'static str> {
+    fn edit(
+        &mut self,
+        source: &mut String,
+        operation: EditOperation,
+        areas: &mut Vec<ChangeArea>,
+    ) -> Result<(), &'static str> {
+        let kind = match &operation {
+            EditOperation::Insert { .. } => "insert",
+            EditOperation::Replace { .. } => "replace",
+            EditOperation::Delete { .. } => "delete",
+            EditOperation::Move { .. } => "move",
+        };
         let patches = match operation {
             EditOperation::Replace { target, text } => {
                 let (from, to) = self.target(source, &target)?;
@@ -932,6 +1050,7 @@ impl WorkingTargets {
         let mut ordered = patches;
         ordered.sort_by_key(|patch| patch.from);
         for patch in ordered.iter().rev() {
+            track_patch(areas, patch, kind);
             let shift = patch.text.len() as isize - (patch.to - patch.from) as isize;
             for (_, block) in &mut self.0 {
                 if patch.to <= block.from && !(block.from == block.to && patch.from == block.from) {

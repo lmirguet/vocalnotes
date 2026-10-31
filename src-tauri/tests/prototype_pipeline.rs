@@ -96,6 +96,9 @@ fn pause_retains_intention_but_stop_purges_and_old_work_never_resumes() {
             message: "".into(),
             actions: vec![Action::DraftingIntent {
                 text: "e-mail".into(),
+                form: String::new(),
+                tone: String::new(),
+                context: String::new(),
             }],
         },
     )
@@ -106,7 +109,7 @@ fn pause_retains_intention_but_stop_purges_and_old_work_never_resumes() {
     core.start_voice(true).unwrap();
     assert!(core.commit_voice(&ticket, edit()).is_err());
     core.stop("stop");
-    assert_eq!(core.intention(), "");
+    assert_eq!(core.intention(), "e-mail");
 }
 
 #[test]

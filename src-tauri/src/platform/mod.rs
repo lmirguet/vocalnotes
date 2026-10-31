@@ -6,4 +6,5 @@ pub mod mistral;
 pub mod pipeline;
 pub mod probe;
 pub mod secrets;
+pub mod session_devices;
 pub mod stt_transport;

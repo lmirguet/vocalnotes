@@ -31,6 +31,8 @@ WordPad : une fenêtre centrée sur la note, sans reproduire une suite bureautiq
 - Une barre de menus « Fichier », « Édition », « Aide » donne accès aux actions usuelles.
 - Un bandeau simple rassemble la mise en forme compatible Markdown et les commandes
   visibles de démarrage et d'arrêt du mode vocal.
+- Lors d’un clic sur « Repérer dans la note », le bloc concerné est amené à l’écran puis signalé pendant deux secondes par un fond distinct et un contour, sans modification du texte ni de sa sélection. *(Demande utilisateur du 2026-10-31, pendant T031.)*
+- Un champ séparé en lecture seule, au-dessus de la note, affiche l’intention courante (but, forme, ton et contexte renseignés). L’intention est une propriété de la note, conservée après pause et arrêt du vocal, enregistrée avec le fichier puis restaurée à sa réouverture ; elle reste distincte du corps rédigé. *(Demande utilisateur du 2026-10-31, pendant T031.)*
 - La note mise en forme occupe la zone principale ; le mode courant, l'état d'écoute
   et les demandes de précision restent lisibles dans l'application.
 - Les boutons de démarrage et d'arrêt complètent le pilotage vocal ; ils ne deviennent
@@ -177,7 +179,7 @@ Les identifiants canoniques `REQ-XXX` suivent une séquence unique. Ils remplace
 - **REQ-007** : Résoudre les cibles à l'aide de la note et du contexte récent ; en cas d'ambiguïté réelle, n'exécuter aucune action de l'intervention et indiquer l'ambiguïté dans l'application. L'utilisateur peut préciser sa demande à la voix ; aucune action ambiguë n'est exécutée automatiquement plus tard. Ne pas émettre de notification dans le centre de notifications du bureau ; si la fenêtre est masquée, le message reste consultable au retour sans imposer le premier plan. *(F10–F11 et décision utilisateur ; S2.3.)*
 - **REQ-008** : Appliquer les changements ordinaires sans confirmation systématique et indiquer discrètement ce qui a été fait. *(F13 ; S2.1.)*
 - **REQ-009** : Comprendre les corrections contextuelles telles que « non, je voulais dire… », sans les transformer en commandes d'historique vocal. *(F14 et arbitrage ; S2.3, S2.5.)*
-- **REQ-010** : Permettre d'exprimer ou de changer librement l'intention de rédaction, sans déclaration préalable obligatoire, insertion automatique des consignes ni perte silencieuse de contenu. *(F49–F52 ; S1.2–S1.3.)*
+- **REQ-010** : Conserver l’intention après arrêt du vocal, la sauvegarder dans les métadonnées du fichier Markdown et la restaurer à la réouverture (demande utilisateur du 2026-10-31). Permettre d'exprimer ou de changer librement l'intention de rédaction, sans déclaration préalable obligatoire, insertion automatique des consignes ni perte silencieuse de contenu. *(F49–F52 ; S1.2–S1.3.)*
 - **REQ-011** : Corriger par épellation avec indications de casse, accent, tiret et apostrophe ; demander une précision en cas d'incertitude et ne pas inscrire l'épellation dans la note sauf demande. *(F20–F21, F24 ; S2.4.)*
 - **REQ-012** : Réutiliser l'orthographe corrigée dans un lexique temporaire de session, avec correction ciblée par défaut et portée globale uniquement explicite ou claire ; conserver les corrections dans la note après effacement du lexique. *(F22–F25 ; S2.4, S7.3.)*
 
@@ -239,10 +241,10 @@ Les identifiants canoniques `REQ-XXX` suivent une séquence unique. Ils remplace
 
 ### Entités principales
 
-- **Note** : contenu courant, structure, destination locale et état de sauvegarde. Son origine vocale ou manuelle ne constitue pas un droit de modification distinct.
-- **Session vocale** : période d'usage explicitement démarrée, état d'écoute et ensemble temporaire d'intentions, de propos utiles et de traitements. Une session invalidée ne peut plus produire de modification.
+- **Note** : contenu courant, intention de rédaction attachée (métadonnées dans le même fichier), structure, destination locale et état de sauvegarde. Son origine vocale ou manuelle ne constitue pas un droit de modification distinct.
+- **Session vocale** : période d'usage explicitement démarrée, état d'écoute et ensemble temporaire de propos utiles et de traitements ; l’intention de rédaction appartient à la note et persiste indépendamment. Une session invalidée ne peut plus produire de modification.
 - **Traitement en cours** : passage concerné, cible si connue, session d'origine et état de validité par rapport à la note courante ; ce n'est pas un historique d'annulation.
-- **Intention de rédaction** : forme, ton et niveau de détail souhaités, modifiables pendant la rédaction sans devenir automatiquement du contenu.
+- **Intention de rédaction** : but, forme, ton et contexte minimal souhaités, modifiables pendant la rédaction sans devenir automatiquement du corps rédigé ; conservés avec la note, y compris après arrêt du vocal.
 - **Lexique temporaire** : associations de mots et d'orthographes corrigées, limitées à la session.
 - **Historique manuel temporaire** : changements de l'éditeur texte servant à son annulation classique, sans persistance après fermeture.
 - **Configuration de services** : choix séparés pour transcription et interprétation, paramètres non sensibles, présence des clés protégées et indication de prise d'effet.

@@ -213,7 +213,17 @@ async fn strict_ordinary_and_priority_requests_are_separate_and_countable() {
         Ok(chat(r#"{"interrupt":"pause"}"#, "stop")),
     ]);
     let (_, model) = llm
-        .interpret_final("un passage", "intention", context())
+        .interpret_final(
+            "un passage",
+            &vocalnotes_lib::domain::intention::DraftingIntention::new(
+                "intention".into(),
+                "".into(),
+                "".into(),
+                "".into(),
+            )
+            .unwrap(),
+            context(),
+        )
         .await
         .unwrap();
     assert_eq!(model, "served-llm");
@@ -224,6 +234,26 @@ async fn strict_ordinary_and_priority_requests_are_separate_and_countable() {
     let transport = llm.transport_for_test();
     let requests = transport.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
+    let system = requests[0]["messages"][0]["content"].as_str().unwrap();
+    assert!(system.contains("exige une action drafting_intent"));
+    assert!(system.contains("synthèse concise"));
+    assert!(system.contains(r#""tone":"neutre""#));
+    let user: Value =
+        serde_json::from_str(requests[0]["messages"][1]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(user["intention"]["purpose"], "intention");
+    assert_eq!(user["intention"]["form"], "");
+    let variants = requests[0]["response_format"]["json_schema"]["schema"]["properties"]["actions"]
+        ["items"]["anyOf"]
+        .as_array()
+        .unwrap();
+    let intent = variants
+        .iter()
+        .find(|v| v["properties"]["type"]["enum"][0] == "drafting_intent")
+        .unwrap();
+    assert_eq!(
+        intent["required"],
+        json!(["type", "text", "form", "tone", "context"])
+    );
     for r in requests.iter() {
         assert_eq!(r["model"], "mistral-large-latest");
         assert_eq!(r["response_format"]["json_schema"]["strict"], true);
@@ -255,7 +285,7 @@ async fn llm_errors_truncation_and_invalid_json_have_no_retry_or_fallback() {
     ] {
         let llm = adapter(vec![reply]);
         let error = llm
-            .interpret_final("texte", "", context())
+            .interpret_final("texte", &Default::default(), context())
             .await
             .err()
             .unwrap();
@@ -296,7 +326,7 @@ async fn cancelling_pending_llm_drops_request_without_retry() {
     assert!(
         tokio::time::timeout(
             Duration::from_millis(5),
-            llm.interpret_final("texte", "", context())
+            llm.interpret_final("texte", &Default::default(), context())
         )
         .await
         .is_err()
@@ -387,7 +417,11 @@ async fn llm_oversize_tools_and_priority_edit_attempts_are_refused() {
         chat("{}", "tool_calls"),
     ] {
         let llm = adapter(vec![Ok(reply)]);
-        assert!(llm.interpret_final("texte", "", context()).await.is_err());
+        assert!(
+            llm.interpret_final("texte", &Default::default(), context())
+                .await
+                .is_err()
+        );
         assert_eq!(llm.transport_for_test().requests.lock().unwrap().len(), 1);
     }
     let llm = adapter(vec![Ok(chat(

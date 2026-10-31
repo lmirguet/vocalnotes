@@ -1,6 +1,12 @@
 export type Block = { from: number; to: number; raw: string; kind: string };
 export type Snapshot = {
   noteId: number; manualPeriod: number; revision: number; generation: number;
+  listeningState?: "stopped" | "starting" | "listening";
+  voiceActivity?: string;
+  draftingIntention?: { purpose: string; form: string; tone: string; context: string } | null;
+  changeFeedback?: { revision: number; areas: { from: number; to: number;
+    kind: "insert" | "replace" | "delete" | "move"; removedCharacters: number }[] } | null;
+  failureStage?: "recognition" | "interpretation" | "application" | null;
   mode: string; source: string; dirty: boolean; message: string; blocks: Block[];
   storageMessage?: string;
   sttRequests?: number; llmRequests?: number; priorityRequests?: number; audioMs?: number;

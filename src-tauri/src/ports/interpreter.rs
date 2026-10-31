@@ -1,4 +1,5 @@
 //! Strict, bounded ordered interventions; no arbitrary tool or voice undo.
+use crate::domain::intention::DraftingIntention;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::future::Future;
@@ -9,7 +10,7 @@ pub trait Interpreter {
     fn interpret_final(
         &self,
         passage: &str,
-        intention: &str,
+        intention: &DraftingIntention,
         candidates: InterpretationContext,
     ) -> impl Future<Output = Result<(Intervention, String), &'static str>> + Send;
     fn interpret_interruption(
@@ -36,9 +37,21 @@ pub struct Intervention {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
-    Edit { operation: EditOperation },
-    DraftingIntent { text: String },
-    SessionAction { command: SessionCommand },
+    Edit {
+        operation: EditOperation,
+    },
+    DraftingIntent {
+        text: String,
+        #[serde(default)]
+        form: String,
+        #[serde(default)]
+        tone: String,
+        #[serde(default)]
+        context: String,
+    },
+    SessionAction {
+        command: SessionCommand,
+    },
 }
 
 /// IDs belong to the current native candidate set, never to a provider offset.
@@ -158,7 +171,12 @@ impl Intervention {
                             _ => false,
                         }
                 }
-                Action::DraftingIntent { text } => text.len() > 4096,
+                Action::DraftingIntent {
+                    text,
+                    form,
+                    tone,
+                    context,
+                } => !DraftingIntention::valid_parts(text, form, tone, context),
                 Action::Edit { operation } => !operation.validate(),
             };
             if invalid {
@@ -225,8 +243,8 @@ pub fn response_format() -> Value {
         json!(["type", "operation"]),
     );
     let intent = object(
-        json!({"type":{"type":"string","enum":["drafting_intent"]},"text":string(4096)}),
-        json!(["type", "text"]),
+        json!({"type":{"type":"string","enum":["drafting_intent"]},"text":string(4096),"form":string(4096),"tone":string(4096),"context":string(4096)}),
+        json!(["type", "text", "form", "tone", "context"]),
     );
     let simple_command = object(
         json!({"action":{"type":"string","enum":["pause","stop","manual","save","new","preferences","close"]}}),

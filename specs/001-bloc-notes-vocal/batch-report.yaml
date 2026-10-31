@@ -1,3 +1,216 @@
+us1_recipe_summary_T031:
+  date: "2026-10-31"
+  status: partial-GNOME-recipe-followups-required
+  task: T031
+  task_complete: false
+  gate: NO-GO-yet
+  application: user-closed-process-absence-verified
+  current_binary_sha256: 4be0527dfe2ba7b6d1140535dbcc7947bffc17c6e875822b0713857c3944c5f7
+  successful_checks: [email-summary-meeting-professional-forms-across-successive-corrected-builds, intention-display-change-persistence-reopen, addition-development-reservations, locate-scroll-highlight-expiration, background-natural-pause-no-forced-foreground, active-GNOME-lock-no-auto-resume, manual-edit-undo-save, close]
+  current_session_voice_edits: {accepted: 2, rejected: 2}
+  remaining: [stale-anchor-and-absent-expected-text-reliability, native-move-delete-feedback-and-reading-position, complete-contextual-metrics, qualify-current-native-conflict-keyring-and-fault-checks]
+  ASR_quality: reserved-no-general-accuracy-claim
+  exclusions: [Windows-runtime, native-suspend-test, packaging]
+  report: docs/validation/us1-gnome.md
+  tests_last_validated: {rust: 148, javascript: 54, failed: 0}
+locate_highlight_T031:
+  date: "2026-10-31"
+  requested_by_user: true
+  status: native-targeted-recipe-passed-user-confirmed
+  manual_recipe: PASS-user-edit-undo-save-intention-preserved
+  saved_profile_and_body_structurally_verified: true
+  lock_recipe: PASS-user-active-capture-OS-invalidation-native-close-no-auto-resume-note-and-intention-preserved
+  lock_callback_to_capture_closed_ms: 4
+  background_recipe: PASS-user-addition-natural-pause-no-forced-foreground
+  previous_locate_recipe: PASS-user-scrolls-to-text
+  previous_visual_indicator: missing-user-requested-improvement
+  indicator: temporary-ProseMirror-node-decoration-background-and-outline
+  duration_ms: 2000
+  activated_by: explicit-locate-click-only
+  editor_content_and_selection_modified: false
+  cleanup: timeout-new-locate-document-change-undo-redo-and-destroy
+  javascript_tests: {passed: 54, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_all_targets: PASS, diff: PASS}
+  logs: [/tmp/vocalnotes-locate-highlight-tests.log, /tmp/vocalnotes-locate-highlight-targeted.log, /tmp/vocalnotes-locate-highlight-build.log]
+  native_recipe: PASS-user-locate-scroll-background-outline-and-expiration
+  voice_edits_in_this_session: {accepted: 2, rejected: 2}
+  reservation: earlier-stale-anchor-and-absent-expected-text-refused-without-application
+  main_binary_rebuilt_for_this_change: true
+  native_build: PASS
+  main_binary_sha256: 4be0527dfe2ba7b6d1140535dbcc7947bffc17c6e875822b0713857c3944c5f7
+  tool_session: 60237
+  native_log: /tmp/vocalnotes-locate-highlight-native.log
+  previous_application: user-closed-process-absence-verified
+  application: user-closed-process-absence-verified
+  existing_application_stopped_or_replaced: false
+  task_T031: open
+intention_change_fix_T031:
+  date: "2026-10-31"
+  status: native-targeted-recipe-passed-user-confirmed
+  initial_user_recipe: FAIL-intention-change-not-observed
+  corrected_user_recipe: PASS-form-tone-change-visible-reservation-preserved
+  meeting_recipe: PASS-user-factual-report-no-final-agreement-reservation-preserved
+  professional_recipe: PASS-user-formal-document-development-reservations-preserved-no-invented-facts
+  observation: first-nonempty-passage-edits-only-without-drafting-intent
+  later_observation: another-passage-includes-drafting-intent-values-not-logged
+  STT_fidelity: not-determined-from-content-free-logs
+  fix: explicit-profile-update-rule-and-synthetic-example-for-form-tone-change
+  feedback: distinct-intention-update-result-and-content-free-changed-unchanged-log
+  tests: {rust_lib: 13, rust_shared: 135, failed: 0}
+  checks: {embedded_all_targets: PASS, rust_format: PASS, diff: PASS}
+  regression: scripted-email-to-neutral-concise-summary-with-reservation-and-file-reopen
+  limits: scripted-response-tests-do-not-certify-provider-semantics
+  test_logs: [/tmp/vocalnotes-intention-change-tests.log, /tmp/vocalnotes-intention-change-regression.log]
+  main_binary_rebuilt_for_this_fix: true
+  native_build: PASS
+  main_binary_sha256: 1a98ba35ca858efee1d9588bf48bf6639c27c82808694e4efec7bd93084bd81c
+  tool_session: 96177
+  native_log: /tmp/vocalnotes-intention-change-native.log
+  previous_application: user-closed-process-absence-verified
+  application: open-manual-microphone-stopped-at-launch
+  existing_application_stopped_or_replaced: false
+  task_T031: open
+  hooks: {before: absent, after: absent}
+intention_persistence_T031:
+  date: "2026-10-31"
+  requested_by_user: true
+  status: native-recipe-in-progress-note-intention-persistence
+  scope: note-owned-intention-preserved-after-stop-and-saved-in-the-same-file
+  format: namespaced-version1-HTML-comment-JSON-before-body
+  separate_sidecar: false
+  raw_audio_transcript_conversation_persisted: false
+  profile_limit_utf8_bytes: 4096
+  tests: {rust_lib: 13, rust_shared: 134, javascript: 54, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_all_targets: PASS, rust_format: PASS, diff: PASS}
+  test_logs: [/tmp/vocalnotes-intention-persistence-tests.log, /tmp/vocalnotes-intention-persistence-js.log, /tmp/vocalnotes-intention-persistence-ui-targeted.log]
+  report: docs/validation/note-intention-format.md
+  previous_intention_field_recipe: PASS-user
+  native_recipe_for_persistence: PASS-user-restored-body-and-intention-in-manual-after-restart
+  saved_document: PASS-file-with-valid-version1-profile-and-nonempty-body
+  close_after_save: user-confirmed-process-absence-verified
+  reopen_tool_session: 18320
+  reopen_log: /tmp/vocalnotes-intention-reopen-native.log
+  reopen_application: open-manual-user-confirmed-restored-note-and-intention
+  existing_application_replaced_or_stopped: false
+  main_binary_rebuilt_for_this_change: true
+  native_build: PASS
+  main_binary_sha256: d1d2330953e2660afffeaa3ea179aee16e12e19cbc0b178f2a2ae82d1b761a16
+  tool_session: 61051
+  native_log: /tmp/vocalnotes-intention-persistence-native.log
+  old_application: user-closed-process-absence-verified
+  application: open-manual-microphone-stopped-at-launch
+  synthetic_recipe_path: /tmp/vocalnotes-intention-recette-kx_by0qn/note.md
+  task_T031: open
+  overrides: earlier-session-only-intention-retention-policy
+  hooks: {before: absent, after: absent}
+intention_view_T031:
+  date: "2026-10-31"
+  requested_by_user: true
+  status: native-recipe-in-progress-intention-field
+  scope: current-session-readonly-intention-above-note
+  persistence: none
+  exposed_to_local_snapshot: true
+  prior_recipe: PASS-user-email-addition-reservation-change-feedback-and-pause
+  tests: {rust_lib: 13, rust_shared: 131, javascript: 54, failed: 0}
+  frontend_typecheck_build: PASS
+  old_application: user-closed-process-absence-and-exit0-verified
+  main_binary_rebuilt_for_this_change: true
+  native_build: PASS
+  embedded_all_targets_check: PASS
+  main_binary_sha256: 0e5e5f6a6bfe0ed3b1f218595e6ee13c5a211281da8077375660d96ed85d2456
+  tool_session: 29343
+  native_log: /tmp/vocalnotes-intention-ui-native.log
+  application: open-manual-microphone-stopped-at-launch
+  native_recipe: pending
+  task_T031: open
+drafting_B12:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-recipe-in-progress
+  scope: [T028, T029, T030, T031]
+  completed_tasks: [T028, T029, T030]
+  active_task: T031
+  platform: Linux-GNOME-Wayland
+  tests: {rust_lib: 13, rust_shared: 131, drafting: 15, javascript: 52, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, native_build: PASS, rust_format: PASS, diff: PASS}
+  logs: [/tmp/vocalnotes-us1-tests.log, /tmp/vocalnotes-us1-ui-tests.log, /tmp/vocalnotes-us1-all-targets.log, /tmp/vocalnotes-us1-web-build.log, /tmp/vocalnotes-us1-native-build.log]
+  report: docs/validation/us1-gnome.md
+  metrics: docs/validation/us1-metrics.md
+  windows: docs/validation/us1-windows.md
+  main_binary_sha256: c22795ec5dd905b18c790c4b0a12cbbd82df2220296a709e19e523aedbdbb432
+  tool_session: 32914
+  native_log: /tmp/vocalnotes-us1-native.log
+  application: open-manual-microphone-stopped-at-launch
+  native_recipe: pending-user-checks
+  gate: OPEN-T031
+  tdd: "Profil structuré absent puis ChangeView absente : échecs constatés avant intégration."
+  new_dependencies: false
+  system_installations: false
+  packaging: false
+  exclusions: [Windows-runtime, native-suspend-test]
+  limits: "Corpus scripté et classification technique ; erreurs de sens à comparer humainement, précision ASR toujours en réserve."
+  next_tasks: [T031]
+  hooks: {before: absent, after: absent}
+drafting_corpus_B11:
+  date: "2026-10-31"
+  status: completed-offline-reference-tests
+  scope: [T027]
+  completed_tasks: [T027]
+  corpus: tests/fixtures/fidelity.json
+  documentation: tests/fixtures/README.md
+  scenarios: 10
+  use_cases: [email, meeting, ideas, professional]
+  recognition_reference_pairs: 2
+  tests: {drafting: 6, rust_lib: 13, rust_shared: 122, failed: 0}
+  checks: {rust_format: PASS, diff: PASS}
+  test_log: /tmp/vocalnotes-t027-tests.log
+  main_binary_rebuilt: false
+  provider_microphone_user_keyring_calls: false
+  new_dependencies: false
+  limits: "Réponses scriptées ; aucune mesure STT/LLM réelle, aucun nouveau garde sémantique ou classificateur d’erreurs produit."
+  next_tasks: [T028]
+  hooks: {before: absent, after: absent}
+foundations_B10:
+  date: "2026-10-31"
+  status: completed-GNOME-foundations-scoped
+  task: T026
+  platform: Linux-GNOME-Wayland
+  main_binary_sha256: 403f9fc77a87e753bd18b32313544fdbebec81d683f8db70c73f84668df8b4ee
+  tool_session: 63288
+  log: /tmp/vocalnotes-foundations-native.log
+  reports: [docs/validation/foundations-gnome.md, docs/validation/foundations-metrics.md, docs/validation/foundations-windows.md]
+  checks: {frontend_build: PASS, native_build: PASS, microphone_stopped_at_launch: PASS-console}
+  completed_tasks: [T026]
+  user_checks: PASS-scoped-see-report
+  application: closed-process-absence-verified
+  preferences_restored: true
+  saved_note_verified: true
+  reservations: [ASR-fidelity, physical-microphone-loss-not-exercised, network-cut-not-exercised, native-voice-correction-not-replayed, served-model-name-not-recorded]
+  next_tasks: [T027]
+  exclusions: [Windows-runtime, native-suspend-test, packaging]
+  gate: GO-local-GNOME-functional-with-documented-limits
+  hooks: {before: absent, after: absent}
+lifecycle_B09:
+  date: "2026-10-31"
+  status: implemented-offline-validated-native-foundations-recipe-pending
+  scope: [T023, T024, T025]
+  platform: Linux-GNOME-Wayland
+  completed_tasks: [T023, T024, T025]
+  tests: {rust_lib: 13, rust_shared: 116, lifecycle_integration: 7, javascript: 50, failed: 0}
+  checks: {frontend_typecheck_build: PASS, embedded_rust_all_targets: PASS, rust_format: PASS, diff: PASS}
+  report: docs/validation/lifecycle-gnome.md
+  tdd: "Frontière périphériques et composant SessionStatus absents : échecs constatés avant intégration."
+  main_binary_rebuilt: false
+  main_binary_sha256: f30770b459f1c38eafcf409975b7da04e8d6fc508ef5a4e4019cf8de69b5e905
+  existing_application_restarted: false
+  provider_microphone_user_keyring_calls: false
+  synthetic_unavailable_keyring_child_test: true
+  system_installations: false
+  new_dependencies: false
+  exclusions: [Windows-runtime, native-suspend-test, packaging]
+  next_tasks: [T026]
+  prior_realtime3_recipe: docs/validation/realtime3-diagnostic-gnome.md
+  hooks: {before: absent, after: absent}
+  historical_precedence: "Ce bloc et les compteurs globaux prévalent sur les lots historiques ; T026 reste ouverte."
 adapters_B08:
   date: "2026-10-31"
   status: implemented-offline-validated-native-voice-recipe-pending
@@ -87,7 +300,7 @@ storage_B05:
   historical_precedence: "Ce bloc décrit le lot actuel ; les états B01–B04 et B03-OFFLINE ci-dessous sont historiques."
   hooks: {before: absent, after: absent}
 batch_id: B03-OFFLINE
-latest_attempt: B04-GNOME
+latest_attempt: B12-US1
 gnome_validation_B04:
   date: "2026-10-31"
   scope: [T006, T007]
@@ -250,11 +463,11 @@ gnome_validation_B04:
     report: docs/validation/prototype-gnome-final.md
   report: docs/validation/prototype-gnome-final.md
   hooks: "extensions.yml absent ; before/after skipped"
-historical_sections: "adapters_B08, preferences_B07, ipc_ui_B06, storage_B05 et les champs racines scope/completed_tasks font autorité. latest_batch B03-OFFLINE est historique. Toutes les sections B01/B02 sont historiques, y compris attentes de relink/PID/consentement et T010 partielle. Contexte de reprise : diagnostic STT Windows HTTP1.0/307 sous TLS vérifié, filtrage corporate probable, aucune redirection suivie ; pas de nouvelle recette."
+historical_sections: "lifecycle_B09, adapters_B08, preferences_B07, ipc_ui_B06, storage_B05 et les champs racines scope/completed_tasks font autorité. latest_batch B03-OFFLINE est historique. Toutes les sections B01/B02 sont historiques, y compris attentes de relink/PID/consentement et T010 partielle. Contexte de reprise : diagnostic STT Windows HTTP1.0/307 sous TLS vérifié, filtrage corporate probable, aucune redirection suivie ; pas de nouvelle recette."
 status: partial
 date: "2026-10-31"
-scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022]
-completed_tasks: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022]
+scope: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022, T023, T024, T025, T026, T027, T028, T029, T030]
+completed_tasks: [T001, T002, T003, T004, T005, T006, T007, T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022, T023, T024, T025, T026, T027, T028, T029, T030]
 partial_tasks: []
 latest_batch:
   batch_id: B03-OFFLINE
@@ -345,6 +558,12 @@ evidence_mapping:
     - {upstream: "spec.md#REQ005/006/007/017", output: src-tauri/src/domain/note.rs, evidence: "Préconditions/cible ambiguë/structure/opaque/ordre sans effet, sessions actuelles vs anciennes, véritables octets CRLF hors cible."}
     - {upstream: "spec.md#U2/REQ014", output: src-tauri/tests/prototype_contracts.rs, evidence: "Acquittements/undo/refus conservés ; 31 JS Linux/Windows PASS, aucune nouvelle recette WebView."}
 traceability:
+  - {requirement: REQ-003, plan_item: "3.1", task: T028, status: ephemeral-structured-intention}
+  - {requirement: REQ-002, plan_item: "3.1", task: T029, status: shared-drafting-orchestration-scripted-corpus}
+  - {requirement: REQ-030, plan_item: "3.2", task: T030, status: accepted-native-source-ranges-and-explicit-navigation}
+  - {requirement: REQ-053, plan_item: "3.1", task: T027, status: synthetic-reference-corpus-no-live-quality-claim}
+  - {requirement: REQ-050, plan_item: "2.7", task: T026, status: completed-GNOME-scoped-Windows-excluded}
+  - {requirement: REQ-052, plan_item: "2.7", task: T026, status: contextual-samples-with-explicit-limits}
   - {requirement: REQ-005, plan_item: "2.1", task: T010, status: contract-completed-runtime-unverified}
   - {requirement: REQ-015, plan_item: "2.1", task: T010, status: typed-no-voice-history}
   - {requirement: REQ-017, plan_item: "2.1", task: T010, status: native-envelope-and-target-guards-tested}

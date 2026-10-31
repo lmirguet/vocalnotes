@@ -1,3 +1,7 @@
+import { Decoration, DecorationSet } from "prosemirror-view";
+import { createIntentionView } from "./IntentionView";
+import { createChangeView } from "./ChangeView";
+import { createSessionStatus } from "./SessionStatus";
 import { createTranscriptView } from "./TranscriptView";
 import { createModelPreferencesView } from "./ModelPreferencesView";
 import { createMenuBar } from "./MenuBar";
@@ -68,6 +72,33 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   const menu = menuBar.element;
   const group = menuBar.group;
   const status = createStatusView();
+  const sessionStatus = createSessionStatus(() => void act({ type: "pause" }));
+  const intention = createIntentionView();
+  let locateHighlight = DecorationSet.empty;
+  let locateTimer: number | undefined;
+  function clearLocateHighlight() {
+    if (locateTimer !== undefined) window.clearTimeout(locateTimer);
+    locateTimer = undefined;
+    locateHighlight = DecorationSet.empty;
+    view.setProps({ decorations: () => locateHighlight });
+  }
+  const changes = createChangeView(offset => {
+    // Source ranges identify the containing visual block. Scrolling is requested
+    // only by this button; it does not move the editor selection or focus.
+    let index = canonical.blocks.findIndex(b => b.to > offset);
+    if (index < 0 && canonical.blocks.length) index = canonical.blocks.length - 1;
+    if (index < 0) return;
+    clearLocateHighlight();
+    view.state.doc.forEach((node, position, i) => {
+      if (i !== index) return;
+      locateHighlight = DecorationSet.create(view.state.doc, [
+        Decoration.node(position, position + node.nodeSize, { class: "vocal-locate-highlight" }),
+      ]);
+      view.setProps({ decorations: () => locateHighlight });
+      (view.nodeDOM(position) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
+      locateTimer = window.setTimeout(clearLocateHighlight, 2000);
+    });
+  });
   const transcript = createTranscriptView(enabled => void act({ type: "transcript", enabled }));
   const notice = document.createElement("p");
   notice.textContent = "Notes Markdown locales, sauvegarde contrôlée vers la destination choisie ; " +
@@ -85,6 +116,9 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   function show(message = feedback) {
     feedback = message;
     transcript.render(canonical);
+    sessionStatus.render(canonical);
+    changes.render(canonical);
+    intention.render(canonical);
     renderStatus(status, canonical, projected, message, queue.length);
     undoButton.disabled = projected.mode !== "manual" || queue.length > 0 || !undo.length;
     redoButton.disabled = projected.mode !== "manual" || queue.length > 0 || !redo.length;
@@ -93,6 +127,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     resumeButton.disabled = !consent.checked || projected.mode !== "paused";
   }
   function restore(s: Snapshot, message: string) {
+    clearLocateHighlight();
     const focused = view.hasFocus();
     const { anchor, head } = view.state.selection;
     synchronized = true;
@@ -180,6 +215,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     if (!tr.docChanged) { view.updateState(view.state.apply(tr)); return; }
     if (acting) { show("Action en cours ; attendre son résultat avant de modifier la note."); return; }
     if (!synchronized || projected.mode !== "manual") return;
+    clearLocateHighlight();
     const beforeState = view.state;
     if (sending && !queue.length) {
       show("Attendre l'acquittement de l'annulation avant de modifier la note.");
@@ -340,6 +376,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     void preferences.toggle();
   });
   async function history(direction: "undo" | "redo") {
+    clearLocateHighlight();
     if (acting || sending || queue.length || projected.mode !== "manual") return;
     const stack = direction === "undo" ? undo : redo;
     const entry = stack.at(-1);
@@ -423,7 +460,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       .catch(() => show("Échec du trousseau ; présence inconnue."));
   });
   preferences.element.append(keyForm);
-  root.replaceChildren(heading, menu, toolbar, status, transcript.element, notice, editor, recovered, preferences.element);
+  root.replaceChildren(heading, menu, toolbar, sessionStatus.element, status, transcript.element, changes.element, notice, intention.element, editor, recovered, preferences.element);
   show();
   // Internal polling makes a blocked native close visible without requiring event permissions.
   const timer = window.setInterval(() => {
@@ -462,6 +499,8 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       disposed = true;
       menuBar.destroy();
       transcript.clear();
+      intention.clear();
+      clearLocateHighlight();
       window.clearInterval(timer);
       secret.value = ""; recovery = ""; queue.length = 0; view.destroy();
     },

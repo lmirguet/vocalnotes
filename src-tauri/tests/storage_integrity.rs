@@ -332,3 +332,86 @@ fn file_watcher_is_a_hint_and_external_content_is_never_imported_silently() {
     assert_eq!(note.snapshot().source, "external");
     assert!(note.snapshot().storage_message.contains("externe"));
 }
+
+#[test]
+fn intention_metadata_roundtrips_without_changing_body_bytes_or_html_boundaries() {
+    use vocalnotes_lib::{
+        domain::intention::DraftingIntention,
+        storage::note_document::{decode, encode},
+    };
+    let body = "# Été\r\n\r\n```text\r\nopaque  \r\n```\r\n";
+    let intention = DraftingIntention::new(
+        "Résumé --> <script> & été".into(),
+        "e-mail".into(),
+        "cordial".into(),
+        "Réserve\nà conserver".into(),
+    )
+    .unwrap();
+    let encoded = encode(body, &intention);
+    assert_eq!(encoded.matches("-->").count(), 1);
+    let (decoded, loaded) = decode(&encoded).unwrap();
+    assert_eq!(decoded.as_bytes(), body.as_bytes());
+    assert!(loaded == intention);
+    assert_eq!(encode(body, &Default::default()), body);
+    let nested_body = encoded.clone();
+    let (decoded, empty) = decode(&encode(&nested_body, &Default::default())).unwrap();
+    assert_eq!(decoded, nested_body);
+    assert!(empty.is_empty());
+    for corrupt in [
+        "<!-- vocalnotes:intention:v2\n{}\n-->\n\nbody",
+        "<!-- vocalnotes:intention:v1\nnot-json\n-->\n\nbody",
+        "<!-- vocalnotes:intention:v1\n{}",
+    ] {
+        assert!(decode(corrupt).is_err());
+    }
+}
+
+#[test]
+fn metadata_only_external_conflict_preserves_both_complete_documents() {
+    use vocalnotes_lib::{
+        domain::{intention::DraftingIntention, note::Note},
+        ports::interpreter::decode_intervention,
+        storage::note_document::{decode, encode},
+    };
+    let f = Fixture::new();
+    let path = f.path("note.md");
+    let profile = |purpose: &str| {
+        DraftingIntention::new(purpose.into(), "e-mail".into(), "".into(), "".into()).unwrap()
+    };
+    fs::write(&path, encode("Note inchangée.", &profile("Initial"))).unwrap();
+    let mut note = Note::new(String::new());
+    note.open(&path).unwrap();
+    let external = encode("Note inchangée.", &profile("Externe"));
+    fs::write(&path, &external).unwrap();
+    note.start_voice(false).unwrap();
+    assert_eq!(note.drafting_intention().purpose(), "Initial");
+    let ticket = note.voice_ticket(1).unwrap();
+    note.commit_voice(&ticket, decode_intervention(r#"{"status":"resolved","message":"","actions":[{"type":"drafting_intent","text":"Local","form":"e-mail","tone":"","context":""}]}"#).unwrap()).unwrap();
+    assert!(note.snapshot().dirty);
+    assert!(note.snapshot().storage_message.contains("Conflit disque"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), external);
+    let recovered: Vec<_> = fs::read_dir(&f.0)
+        .unwrap()
+        .map(|e| fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    assert!(
+        recovered
+            .iter()
+            .any(|d| decode(d).unwrap().1.purpose() == "Local")
+    );
+    assert!(
+        recovered
+            .iter()
+            .any(|d| decode(d).unwrap().1.purpose() == "Externe")
+    );
+    let resolved = f.path("resolue.md");
+    note.save_copy(&resolved).unwrap();
+    note.stop("Manuel");
+    let mut reopened = Note::new(String::new());
+    reopened.open(&resolved).unwrap();
+    assert_eq!(reopened.snapshot().source, "Note inchangée.");
+    assert_eq!(reopened.drafting_intention().purpose(), "Local");
+    assert_eq!(fs::read_to_string(&path).unwrap(), external);
+    reopened.loaded("Autre note.".into());
+    assert!(reopened.drafting_intention().is_empty());
+}

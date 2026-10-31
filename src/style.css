@@ -76,3 +76,15 @@ button, input { font: inherit; }
   color: #492f00;
   border: 2px solid #9a6700;
 }
+
+[aria-label="Modifications vocales"] li { border-inline-start: .2rem solid currentColor; padding-inline-start: .6rem; margin-block: .3rem; }
+[aria-label="Modifications vocales"] code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+[aria-label="Intention de rédaction"] textarea { display: block; box-sizing: border-box; width: 100%; resize: vertical; margin-block: .4rem 1rem; font: inherit; background: #f5f6f8; color: inherit; }
+
+/* Explicit locate click only; temporary editor decoration, never saved text. */
+.ProseMirror .vocal-locate-highlight {
+  background-color: #fff1a8;
+  outline: 2px solid #805d00;
+  outline-offset: 2px;
+}

@@ -88,4 +88,28 @@ describe("fenêtre de note", () => {
       expect(root.querySelector('[aria-expanded="true"]')).not.toBeNull();
     } finally { app.destroy(); vi.useRealTimers(); }
   });
+  it("place l’intention au-dessus de la note et la synchronise sans édition ni focus imposé", async () => {
+    vi.useFakeTimers();
+    const root = document.createElement("main"); document.body.replaceChildren(root);
+    let snapshot: Snapshot = { ...initial, mode: "voice", draftingIntention: null };
+    const app = await mountDesktopShell(root, async () => snapshot);
+    try {
+      const field = root.querySelector<HTMLTextAreaElement>('[aria-label="Intention de rédaction courante"]')!;
+      const editor = root.querySelector('[aria-label="Note"]')!;
+      expect(field.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const focused = root.querySelector<HTMLButtonElement>(".menu-trigger")!; focused.focus();
+      snapshot = { ...snapshot, draftingIntention: { purpose: "Présenter un devis", form: "e-mail", tone: "cordial", context: "" } };
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(field.value).toContain("Présenter un devis");
+      expect(app.view.state.doc.textContent).toBe("Note");
+      expect(document.activeElement).toBe(focused);
+      snapshot = { ...snapshot, mode: "manual" };
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(field.value).toContain("Présenter un devis");
+      snapshot = { ...snapshot, noteId: 2, manualPeriod: 2, draftingIntention: null };
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(field.value).toBe("");
+    } finally { app.destroy(); vi.useRealTimers(); }
+  });
+
 });

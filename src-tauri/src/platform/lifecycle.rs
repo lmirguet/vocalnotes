@@ -16,7 +16,24 @@ pub struct LifecycleGuard {
 
 impl LifecycleGuard {
     pub fn start(callback: impl Fn() + Send + Sync + 'static) -> Result<Self, &'static str> {
-        let stop = Arc::new(AtomicBool::new(false));
+        Self::start_guarded(Arc::new(AtomicBool::new(false)), callback)
+    }
+
+    pub fn start_guarded(
+        stop: Arc<AtomicBool>,
+        callback: impl Fn() + Send + Sync + 'static,
+    ) -> Result<Self, &'static str> {
+        if stop.load(Ordering::Acquire) {
+            return Err("Initialisation de la surveillance OS annulée.");
+        }
+        let invalidated = Arc::new(AtomicBool::new(false));
+        let invalidated_callback = invalidated.clone();
+        let callback = move || {
+            // Latch even a lock followed by an unlock before startup completes.
+            if !invalidated_callback.swap(true, Ordering::AcqRel) {
+                callback();
+            }
+        };
         let worker_stop = stop.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let callback: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
@@ -30,17 +47,20 @@ impl LifecycleGuard {
             }
         });
         match ready_rx.recv_timeout(Duration::from_secs(8)) {
-            Ok(Ok(())) => Ok(Self {
-                stop,
-                worker: Some(worker),
-            }),
+            Ok(Ok(())) if !stop.load(Ordering::Acquire) && !invalidated.load(Ordering::Acquire) => {
+                Ok(Self {
+                    stop,
+                    worker: Some(worker),
+                })
+            }
             result => {
                 stop.store(true, Ordering::Release);
                 let _ = worker.join();
-                Err(result
-                    .ok()
-                    .and_then(Result::err)
-                    .unwrap_or("Initialisation de la surveillance OS expirée."))
+                Err(match result {
+                    Ok(Err(message)) => message,
+                    Ok(Ok(())) => "Initialisation de la surveillance OS invalidée.",
+                    Err(_) => "Initialisation de la surveillance OS expirée.",
+                })
             }
         }
     }

@@ -57,3 +57,11 @@ mod provider_contracts;
 #[cfg(test)]
 #[path = "../tests/diagnostic_privacy.rs"]
 mod diagnostic_privacy;
+
+#[cfg(test)]
+#[path = "../tests/lifecycle.rs"]
+mod lifecycle;
+
+#[cfg(test)]
+#[path = "../tests/drafting.rs"]
+mod drafting;
