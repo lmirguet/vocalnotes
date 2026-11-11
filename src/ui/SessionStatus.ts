@@ -23,7 +23,9 @@ export function createSessionStatus(pause: () => void) {
     const activity = snapshot.voiceActivity === "processing" ? "Traitement du passage finalisé"
       : snapshot.voiceActivity === "clarification" ? "Précision demandée — consulter le message"
         : snapshot.voiceActivity === "error" ? "Erreur — consulter le message et le bilan vocal" : "";
-    const text = capture + (activity ? ` — ${activity}` : "");
+    const text = capture + (activity ? ` — ${activity}` : "")
+      + (snapshot.sttConfiguredModel ? ` — STT configuré : ${snapshot.sttConfiguredModel}` : "")
+      + (snapshot.sttAcknowledgedModel ? ` — STT acquitté : ${snapshot.sttAcknowledgedModel}` : "");
     if (state.textContent !== text) state.textContent = text;
     action.disabled = !voice;
   } };

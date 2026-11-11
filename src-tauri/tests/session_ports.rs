@@ -1,9 +1,10 @@
 use serde_json::{Value, json};
+use vocalnotes_lib::adapters::mistral_stt::Finality;
 use vocalnotes_lib::ports::{
     interpreter::{
         Interpreter, Interruption, decode_interrupt, decode_intervention, response_format,
     },
-    stt::{Finality, SttEvent, SttInput, SttOutput},
+    stt::{SttEvent, SttInput, SttOutput},
 };
 
 fn strict_objects(value: &Value) {
@@ -95,6 +96,9 @@ fn native_adapters_implement_separate_provider_independent_ports() {
     input::<vocalnotes_lib::platform::mistral::SttWriter>();
     output::<vocalnotes_lib::platform::mistral::SttReader>();
     interpreter::<vocalnotes_lib::platform::mistral::MistralInterpreter>();
+    input::<vocalnotes_lib::adapters::openai_stt::OpenAiStt>();
+    output::<vocalnotes_lib::adapters::openai_stt::OpenAiStt>();
+    interpreter::<vocalnotes_lib::adapters::openai_interpreter::OpenAiInterpreter>();
     // Compile-time contract only: no constructor that connects, no provider calls.
 }
 

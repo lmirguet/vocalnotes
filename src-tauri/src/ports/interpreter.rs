@@ -259,32 +259,14 @@ pub fn response_format() -> Value {
             "command":{"anyOf":[simple_command,path_command]}}),
         json!(["type", "command"]),
     );
-    let mut format = json!({"type":"json_schema","json_schema":{"name":"intervention","strict":true,"schema":
+    let format = json!({"type":"json_schema","json_schema":{"name":"intervention","strict":true,"schema":
         object(json!({
             "status":{"type":"string","enum":["resolved","clarify"]},
             "message":string(4096),
             "actions":{"type":"array","maxItems":32,"items":{"anyOf":[edit,intent,session]}}
         }), json!(["status","message","actions"]))
     }});
-    constrain_envelope(&mut format);
     format
-}
-
-/// Match the provider-visible envelope to the native status/message/actions guard.
-/// Keep root object properties for providers expecting an object at the root.
-fn constrain_envelope(format: &mut Value) {
-    let schema = &mut format["json_schema"]["schema"];
-    let mut base = schema.clone();
-    base.as_object_mut().unwrap().remove("anyOf");
-    let mut resolved = base.clone();
-    resolved["properties"]["status"]["enum"] = json!(["resolved"]);
-    resolved["properties"]["message"]["enum"] = json!([""]);
-    let mut clarify = base;
-    clarify["properties"]["status"]["enum"] = json!(["clarify"]);
-    clarify["properties"]["message"]["minLength"] = json!(1);
-    clarify["properties"]["message"]["pattern"] = json!(r"\S");
-    clarify["properties"]["actions"]["maxItems"] = json!(0);
-    schema["anyOf"] = json!([resolved, clarify]);
 }
 
 pub fn response_format_for_context(context: &InterpretationContext) -> Value {
@@ -299,8 +281,6 @@ pub fn response_format_for_context(context: &InterpretationContext) -> Value {
         anchor["block_id"]["enum"] = json!([context.blocks[0].block_id]);
         anchor["expected"]["enum"] = json!([""]);
         operation["anyOf"] = json!([insert]);
-        // Rebuild alternatives after specializing the native empty-note anchor.
-        constrain_envelope(&mut format);
     }
     format
 }

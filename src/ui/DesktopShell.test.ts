@@ -8,7 +8,7 @@ const initial: Snapshot = { noteId:1, manualPeriod:1, revision:0, generation:1, 
 describe("fenêtre de note", () => {
   it("réunit menus, bandeau et une note sans cible de traitement inventée", async () => {
     const root = document.createElement("main"); document.body.replaceChildren(root);
-    const invoke = vi.fn(async () => initial);
+    const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) => initial);
     const app = await mountDesktopShell(root, invoke);
     try {
       expect([...root.querySelectorAll(".menu-trigger")].map(e => e.textContent)).toEqual(["Fichier","Édition","Aide"]);
@@ -18,7 +18,7 @@ describe("fenêtre de note", () => {
       expect(root.querySelector('[data-target], [data-processing-zone]')).toBeNull();
       expect(root.textContent).not.toContain("T006 non recetté");
       expect(root.querySelector('[role="status"]')?.getAttribute("aria-live")).toBe("polite");
-      expect(invoke).toHaveBeenCalledExactlyOnceWith("prototype_snapshot", undefined);
+      expect(invoke.mock.calls.map(call => call[0])).toEqual(["prototype_snapshot", "preferences_get"]);
     } finally { app.destroy(); }
   });
   it("place le conflit avant les compteurs après un enregistrement refusé", async () => {
@@ -45,8 +45,8 @@ describe("fenêtre de note", () => {
   it("efface une clé non envoyée quand les préférences sont refermées", async () => {
     const root = document.createElement("main"); document.body.replaceChildren(root);
     const invoke = vi.fn(async (command: string) => command === "preferences_get" ? {
-      stt:{provider:"mistral",model:"voxtral-mini-transcribe-realtime-2602"},
-      llm:{provider:"mistral",model:"mistral-large-latest"}, lastNote:null,
+      stt:{provider:"openai",model:"gpt-realtime-whisper"},
+      llm:{provider:"openai",model:"gpt-6-luna"}, lastNote:null,
     } : initial);
     const app = await mountDesktopShell(root, invoke);
     try {
@@ -61,6 +61,41 @@ describe("fenêtre de note", () => {
       expect(root.textContent).not.toContain("synthetic-unsent-key");
     } finally { app.destroy(); }
   });
+  it("annonce une migration persistée une fois et expose le consentement OpenAI", async () => {
+    vi.useFakeTimers();
+    const root = document.createElement("main"); document.body.replaceChildren(root);
+    const migrated = { ...initial, preferencesMigrated:true, sttModel:"custom-stt", llmModel:"custom-llm" };
+    const app = await mountDesktopShell(root, async command => command === "preferences_get"
+      ? { stt:{model:"custom-stt"}, llm:{model:"custom-llm"} } : migrated);
+    try {
+      expect(root.textContent).toContain("préférences ont été migrées");
+      expect(root.textContent).toContain("clé OpenAI");
+      expect(root.textContent).toContain("custom-stt");
+      expect(root.textContent).toContain("custom-llm");
+      expect(root.textContent).toContain("OpenAI");
+      expect(root.textContent).not.toMatch(/Mistral|Voxtral/);
+      expect(root.querySelector<HTMLInputElement>('[data-consent="voice"]')!.checked).toBe(false);
+      expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')!.disabled).toBe(true);
+      const dismiss = root.querySelector<HTMLButtonElement>('[data-action="dismiss-migration"]')!;
+      dismiss.click();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(dismiss.parentElement?.hidden).toBe(true);
+      expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("true");
+    } finally { app.destroy(); vi.useRealTimers(); }
+  });
+  it("conserve l'édition manuelle si les préférences sont indisponibles", async () => {
+    const root = document.createElement("main"); document.body.replaceChildren(root);
+    const app = await mountDesktopShell(root, async command => {
+      if (command === "preferences_get") throw new Error("private detail");
+      return initial;
+    });
+    try {
+      expect(root.textContent).toContain("Modèles configurés indisponibles");
+      expect(root.textContent).not.toContain("private detail");
+      expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("true");
+      expect(root.querySelector('[data-action="dismiss-migration"]')?.parentElement?.hidden).toBe(true);
+    } finally { app.destroy(); }
+  });
   it("interdit la saisie et les commandes de mise en forme pendant le vocal", async () => {
     const root = document.createElement("main"); document.body.replaceChildren(root);
     const invoke = vi.fn(async () => ({...initial,mode:"voice"}));
@@ -70,7 +105,7 @@ describe("fenêtre de note", () => {
       for (const action of ["Gras","Italique","Titre","Paragraphe","list","undo","redo"])
         expect(root.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)?.disabled).toBe(true);
       root.querySelector<HTMLButtonElement>('[data-action="Gras"]')!.click();
-      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledTimes(2);
     } finally { app.destroy(); }
   });
   it("met à jour l’état sans déplacer le focus de la destination", async () => {

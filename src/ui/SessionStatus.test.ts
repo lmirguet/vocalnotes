@@ -26,3 +26,17 @@ it("distingue initialisation, écoute, traitement, précision, erreur et pause s
   }
   expect(document.activeElement).toBe(input);
 });
+
+it("distingue le modèle STT configuré et le modèle acquitté sans les dire servis", () => {
+  const status = createSessionStatus(vi.fn());
+  const base = { mode:"voice", listeningState:"starting", sttConfiguredModel:"configured-stt",
+    sttAcknowledgedModel:"" } as Snapshot;
+  status.render(base);
+  expect(status.element.textContent).toContain("STT configuré : configured-stt");
+  expect(status.element.textContent).not.toContain("STT acquitté");
+  expect(status.element.textContent).not.toContain("servi");
+  status.render({ ...base, listeningState:"listening", sttAcknowledgedModel:"acknowledged-stt" });
+  expect(status.element.textContent).toContain("STT configuré : configured-stt");
+  expect(status.element.textContent).toContain("STT acquitté : acknowledged-stt");
+  expect(status.element.textContent).not.toContain("servi");
+});

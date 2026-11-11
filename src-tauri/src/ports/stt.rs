@@ -1,8 +1,5 @@
 //! Provider-independent native PCM input and transcription event output.
-use serde_json::Value;
 use std::future::Future;
-
-const MAX_REPLY: usize = 65_536;
 
 pub trait SttInput {
     fn append_pcm(&mut self, pcm: &[u8]) -> impl Future<Output = Result<(), &'static str>> + Send;
@@ -13,49 +10,22 @@ pub trait SttOutput {
     fn next_event(&mut self) -> impl Future<Output = Result<SttEvent, &'static str>> + Send;
 }
 
+pub trait LiveStt: SttInput + SttOutput + Send {
+    fn begin_passage(&mut self) -> Result<(), &'static str>;
+}
+
 pub enum SttEvent {
     Provisional(String),
-    Final { text: String, model: String },
+    Final {
+        text: String,
+        model: ModelProvenance,
+    },
     Other,
 }
 
-#[derive(Default)]
-pub struct Finality {
-    finished: bool,
-}
-
-impl Finality {
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
-
-    pub fn accept(&mut self, value: &Value) -> Result<SttEvent, &'static str> {
-        if self.finished {
-            return Err("Passage déjà finalisé ; événement rejeté.");
-        }
-        match value["type"].as_str() {
-            Some("transcription.text.delta") => {
-                let text = value["text"].as_str().ok_or("Delta STT invalide.")?;
-                if text.len() > MAX_REPLY {
-                    return Err("Réponse STT trop volumineuse.");
-                }
-                Ok(SttEvent::Provisional(text.into()))
-            }
-            Some("transcription.done") => {
-                let text = value["text"].as_str().ok_or("Final STT invalide.")?;
-                let model = value["model"].as_str().ok_or("Modèle STT servi absent.")?;
-                if text.len() > MAX_REPLY || model.len() > 256 || model.trim().is_empty() {
-                    return Err("Réponse STT ou modèle servi invalide.");
-                }
-                self.finished = true;
-                Ok(SttEvent::Final {
-                    text: text.into(),
-                    model: model.into(),
-                })
-            }
-            Some("error") => Err("Erreur du service STT ; passage non intégré."),
-            Some(_) => Ok(SttEvent::Other),
-            None => Err("Événement STT invalide."),
-        }
-    }
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ModelProvenance {
+    pub configured: Option<String>,
+    pub acknowledged: Option<String>,
+    pub served: Option<String>,
 }

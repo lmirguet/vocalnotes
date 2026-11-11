@@ -14,8 +14,12 @@ const initial: Snapshot = {
     { from: 9, to: 27, raw: "```rs\nopaque()\n```", kind: "opaque" },
   ],
 };
+const preferences = {
+  stt: { provider: "openai", model: "gpt-realtime-whisper" },
+  llm: { provider: "openai", model: "gpt-6-luna" }, lastNote: null,
+};
 
-async function setup(invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> = vi.fn(async () => initial)) {
+async function setup(invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> = vi.fn(async (command: string) => command === "preferences_get" ? preferences : initial)) {
   const root = document.createElement("main");
   document.body.replaceChildren(root);
   const app = await mountPrototype(root, invoke);
@@ -67,7 +71,9 @@ describe("prototype natif partiel", () => {
     }
     expect(root.querySelector(".ProseMirror")).not.toBeNull();
     expect(root.querySelector("[data-opaque]")?.textContent).toContain("opaque()");
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("prototype_snapshot", undefined);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["prototype_snapshot", undefined], ["preferences_get", undefined],
+    ]);
     expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')?.disabled).toBe(true);
     app.destroy();
   });
@@ -208,7 +214,9 @@ describe("prototype natif partiel", () => {
     expect(root.querySelector<HTMLButtonElement>('[data-action="redo"]')?.disabled).toBe(true);
     root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.click();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["prototype_snapshot", undefined], ["preferences_get", undefined],
+    ]);
     expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')?.disabled).toBe(true);
     app.destroy();
   });
@@ -267,13 +275,16 @@ describe("prototype natif partiel", () => {
   });
 
   it("démarre uniquement sur accord contextualisé puis action explicite", async () => {
-    const invoke = vi.fn(async () => initial);
+    const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) =>
+      command === "preferences_get" ? preferences : initial);
     const { root, app } = await setup(invoke);
     const consent = root.querySelector<HTMLInputElement>('[data-consent="voice"]')!;
     expect(consent).not.toBeNull();
     consent.checked = true;
     consent.dispatchEvent(new Event("change"));
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls).toEqual([
+      ["prototype_snapshot", undefined], ["preferences_get", undefined],
+    ]);
     root.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("prototype_action",
       { action: { type: "start", consent: true, resume: false } }));
@@ -302,7 +313,8 @@ describe("prototype natif partiel", () => {
   it("suspend l'édition sur perte de synchronisation et ne rejoue aucune proposition", async () => {
     vi.useFakeTimers();
     let calls = 0;
-    const invoke = vi.fn(async () => {
+    const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) => {
+      if (command === "preferences_get") return preferences;
       if (++calls === 1) return initial;
       throw new Error("private error");
     });
@@ -312,7 +324,10 @@ describe("prototype natif partiel", () => {
       expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("false");
       expect(root.textContent).toContain("édition suspendue");
       expect(root.textContent).not.toContain("private error");
-      expect(invoke.mock.calls).toHaveLength(2);
+      expect(invoke.mock.calls).toEqual([
+        ["prototype_snapshot", undefined], ["preferences_get", undefined],
+        ["prototype_snapshot", undefined],
+      ]);
     } finally { app.destroy(); vi.useRealTimers(); }
   });
 });

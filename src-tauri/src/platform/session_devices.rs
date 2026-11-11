@@ -19,6 +19,11 @@ pub trait CaptureStream: Send {
     fn next_frame(&self) -> Result<Option<AudioFrame>, &'static str>;
 }
 pub trait SessionDevices: Send + Sync + 'static {
+    type Transcription: crate::ports::stt::LiveStt;
+    fn transcription(
+        &self,
+        selection: &crate::config::preferences::ServiceSelection,
+    ) -> impl Future<Output = Result<Self::Transcription, &'static str>> + Send;
     fn monitor(
         &self,
         cancelled: Arc<AtomicBool>,
@@ -55,6 +60,13 @@ impl CaptureStream for NativeCapture {
     }
 }
 impl SessionDevices for NativeDevices {
+    type Transcription = crate::adapters::openai_stt::OpenAiStt;
+    async fn transcription(
+        &self,
+        selection: &crate::config::preferences::ServiceSelection,
+    ) -> Result<Self::Transcription, &'static str> {
+        Self::Transcription::connect_selected(selection).await
+    }
     async fn monitor(
         &self,
         cancelled: Arc<AtomicBool>,

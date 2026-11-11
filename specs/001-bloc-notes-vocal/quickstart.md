@@ -1,3 +1,10 @@
+> **Migration OpenAI — 2026-11-11.** Pour la configuration et la recette courantes,
+> suivre le [guide OpenAI](../002-remplacer-services-openai/quickstart.md).
+> Les bilans Bxx/Txxx ci-dessous documentent les versions antérieures Mistral,
+> pas une validation OpenAI. Les modèles actifs par défaut sont
+> `gpt-realtime-whisper` et `gpt-6-luna`, avec une clé OpenAI distincte au trousseau.
+> `store:false` ne garantit pas l'absence de conservation fournisseur.
+
 **Bilan T031 — passage de recette terminé, tâche encore ouverte.** Application
 fermée par l’utilisateur, absence du processus vérifiée. Contrôles ciblés réussis
 sur les versions successives corrigées ; deux éditions refusées pour ancre périmée
@@ -414,7 +421,7 @@ prérequis de design autonome.
 2. Vérifier Q01 : indicateur d'écoute et précision affichés uniquement dans l'application et consultables au retour volontaire ; aucune extension GNOME pour ces affichages, aucun indicateur hors fenêtre, notification du bureau, lecture vocale ni prise de premier plan imposée.
 3. Obtenir deux sessions desktop interactives réelles, GNOME/Wayland et Windows 11. Un hôte Linux distant ne les fournit pas implicitement. Noter distribution/build, shell, affichage, CPU, mémoire, micro, backend audio, version WebKitGTK ou WebView2 et mode de distribution.
 4. Préparer Rust stable édition 2024, Node 22 LTS, Tauri 2 et dépendances système WebKitGTK/ALSA/Secret Service Fedora ou WebView2/outillage Windows. T005 fige patches et lockfiles ; cibles RPM/NSIS. Aucune installation réalisée ici. Ne pas supposer qu'une compilation Linux suffit.
-5. Utiliser `voxtral-mini-transcribe-realtime-2602`, PCM mono s16le 16 kHz, et `mistral-large-latest` avec `json_schema` strict. Au premier essai autorisé, vérifier catalogue/accès compte, modèle servi et acceptation du schéma, sans deviner une version derrière l'alias. Relever tarifs officiels datés si accessibles ; sinon coût « inconnu », jamais zéro. Conditions externes non vérifiées : aucun contenu sensible. Obtenir accord sur contact externe et coût possible avant test synthétique.
+5. Pour la version migrée, utiliser OpenAI : `gpt-realtime-whisper`, PCM mono s16le transmis à 24 kHz (VAD local conservé à 16 kHz), et `gpt-6-luna` via Responses avec schéma strict et `store:false`. Suivre le [contrat OpenAI](../002-remplacer-services-openai/contracts/openai-services.md). Distinguer modèle configuré/acquitté et modèle effectivement servi quand la réponse l'atteste. Relever tarifs officiels datés si accessibles ; sinon coût « inconnu », jamais zéro. Conditions externes non vérifiées : aucun contenu sensible. Obtenir un nouvel accord sur microphone, contact externe et coût possible avant une recette réelle, sans reprendre les anciennes autorisations Mistral.
 6. Saisir une clé dans le champ masqué des préférences locales, envoyé au trousseau via la commande dédiée puis vidé sans copie dans l'état d'UI. Ne pas la mettre en variable d'environnement, commande, `.env`, note ou log. Vérifier backend réel, jamais mock ou fallback clair.
 
 ## 2. Commandes futures proposées

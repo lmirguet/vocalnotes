@@ -4,6 +4,7 @@ import { createChangeView } from "./ChangeView";
 import { createSessionStatus } from "./SessionStatus";
 import { createTranscriptView } from "./TranscriptView";
 import { createModelPreferencesView } from "./ModelPreferencesView";
+import { createRenderEvidence } from "./RenderEvidence";
 import { createMenuBar } from "./MenuBar";
 import { createToolbar, button } from "./Toolbar";
 import { createNoteView, schema, documentFor } from "./NoteView";
@@ -103,11 +104,29 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   const notice = document.createElement("p");
   notice.textContent = "Notes Markdown locales, sauvegarde contrôlée vers la destination choisie ; " +
     "les blocs non pris en charge restent opaques. Le vocal exige la surveillance OS native disponible. " +
-    "Audio transmis à Voxtral, passages finalisés/intention/sections éditables à Mistral Large ; " +
+    "Audio et passages finalisés, intention et sections éditables nécessaires transmis à OpenAI ; " +
     "les provisoires servent aussi à l'interruption naturelle (requêtes supplémentaires). " +
     "Tarifs et conservation fournisseur inconnus : aucun contenu sensible. " +
     "Attention aux paroles de tiers en arrière-plan. Aucune notification hors fenêtre.";
+  const configuredModels = document.createElement("p");
+  configuredModels.textContent = "Modèles configurés indisponibles ; consulter les préférences. Accès non vérifié.";
+  let modelsSaved = false;
+  function showConfiguredModels(models: { stt: { model: string }; llm: { model: string } }) {
+    if (disposed || typeof models?.stt?.model !== "string" || typeof models?.llm?.model !== "string") return;
+    configuredModels.textContent = `Modèles configurés pour une nouvelle session : transcription ${models.stt.model} ; interprétation ${models.llm.model}. Accès non vérifié ; une reprise conserve les modèles suspendus.`;
+  }
+  void invoke<{ stt: { model: string }; llm: { model: string } }>("preferences_get")
+    .then(models => { if (!modelsSaved) showConfiguredModels(models); }).catch(() => {});
+  const migration = document.createElement("div");
+  migration.hidden = true;
+  migration.setAttribute("role", "status");
+  const migrationText = document.createElement("span");
+  migrationText.textContent = "Vos préférences ont été migrées vers OpenAI. Renseignez une clé OpenAI si nécessaire.";
+  migration.append(migrationText);
+  button(migration, "Fermer", "dismiss-migration", () => { migration.hidden = true; });
+  let migrationShown = false;
   const editor = document.createElement("section");
+  const noteEvidence = createRenderEvidence(editor, "note-commit");
   editor.setAttribute("aria-label", "Note");
   const recovered = document.createElement("pre");
   recovered.hidden = true;
@@ -115,7 +134,15 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
 
   function show(message = feedback) {
     feedback = message;
+    if (canonical.preferencesMigrated && !migrationShown) {
+      migrationShown = true;
+      migration.hidden = false;
+    }
     transcript.render(canonical);
+    if (!queue.length && projected.source === canonical.source) {
+      noteEvidence.queue(canonical, canonical.appliedPassageId,
+        () => !queue.length && projected.source === canonical.source);
+    } else noteEvidence.cancel();
     sessionStatus.render(canonical);
     changes.render(canonical);
     intention.render(canonical);
@@ -370,7 +397,10 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     void navigator.clipboard.writeText(canonical.source).catch(() => show("Échec de copie ; note inchangée."));
   });
   const edits = group("Édition");
-  const preferences = createModelPreferencesView(rawInvoke);
+  const preferences = createModelPreferencesView(rawInvoke, models => {
+    modelsSaved = true;
+    showConfiguredModels(models);
+  });
   button(edits, "Préférences", "preferences", () => {
     if (!preferences.element.hidden) secret.value = "";
     void preferences.toggle();
@@ -428,7 +458,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     "Micro ouvert seulement après accord, démarrage explicite et surveillance OS établie. Une note seule est enregistrée. " +
     "Avec une destination connue, chaque modification acceptée est sauvegardée après contrôle du fichier disque ; " +
     "sans destination, en cas de conflit ou d’erreur, fermeture suspendue et note accessible. " +
-    "Coût et conservation Mistral inconnus ; pas de données sensibles. Aucun indicateur hors fenêtre.";
+    "Coût et conservation OpenAI inconnus ; pas de données sensibles. Aucun indicateur hors fenêtre.";
   help.append(helpText);
   const controls = createToolbar({
     format: command => { if (projected.mode === "manual") command(view.state, view.dispatch, view); },
@@ -436,9 +466,9 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   });
   const { element: toolbar, consent, startButton, resumeButton, setFormattingEnabled } = controls;
   const keyForm = document.createElement("section");
-  keyForm.setAttribute("aria-label", "Clé Mistral — trousseau du système");
+  keyForm.setAttribute("aria-label", "Clé OpenAI — trousseau du système");
   const keyLabel = document.createElement("label");
-  keyLabel.textContent = "Clé Mistral (trousseau uniquement) ";
+  keyLabel.textContent = "Clé OpenAI (trousseau uniquement) ";
   const secret = document.createElement("input");
   secret.type = "password";
   secret.autocomplete = "off";
@@ -460,7 +490,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       .catch(() => show("Échec du trousseau ; présence inconnue."));
   });
   preferences.element.append(keyForm);
-  root.replaceChildren(heading, menu, toolbar, sessionStatus.element, status, transcript.element, changes.element, notice, intention.element, editor, recovered, preferences.element);
+  root.replaceChildren(heading, menu, notice, configuredModels, toolbar, sessionStatus.element, status, migration, transcript.element, changes.element, intention.element, editor, recovered, preferences.element);
   show();
   // Internal polling makes a blocked native close visible without requiring event permissions.
   const timer = window.setInterval(() => {
@@ -498,7 +528,8 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     destroy() {
       disposed = true;
       menuBar.destroy();
-      transcript.clear();
+      transcript.destroy();
+      noteEvidence.destroy();
       intention.clear();
       clearLocateHighlight();
       window.clearInterval(timer);

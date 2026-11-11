@@ -23,7 +23,9 @@ fn done_is_the_only_final_text_and_is_consumed_once() {
     {
         SttEvent::Final { text, model } => {
             assert_eq!(text, "douze");
-            assert_eq!(model, "test-model");
+            assert_eq!(model.served.as_deref(), Some("test-model"));
+            assert!(model.configured.is_none());
+            assert!(model.acknowledged.is_none());
         }
         _ => panic!("missing done"),
     }

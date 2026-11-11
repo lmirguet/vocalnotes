@@ -61,6 +61,25 @@ fn events(extra: Vec<Value>) -> Vec<Value> {
     e
 }
 
+#[test]
+fn legacy_native_transports_cannot_send_openai_credentials_to_mistral() {
+    use vocalnotes_lib::adapters::mistral_interpreter::NativeChatTransport;
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        assert!(
+            NativeChatTransport
+                .execute(json!({"synthetic":"request"}))
+                .await
+                .is_err()
+        );
+        assert!(
+            vocalnotes_lib::adapters::mistral_stt::MistralStt::connect_explicit()
+                .await
+                .is_err()
+        );
+    });
+}
+
 #[tokio::test]
 async fn stt_requires_ack_and_only_done_is_final_including_corrections() {
     let (transport, sent) = socket(events(vec![
@@ -89,7 +108,7 @@ async fn stt_requires_ack_and_only_done_is_final_including_corrections() {
         SttEvent::Other
     ));
     assert!(
-        matches!(stream.next_event().await.unwrap(),SttEvent::Final{text,model} if text=="douze" && model=="served-stt")
+        matches!(stream.next_event().await.unwrap(),SttEvent::Final{text,model} if text=="douze" && model.served.as_deref()==Some("served-stt"))
     );
     assert!(stream.next_event().await.is_err());
     assert!(stream.end_passage().await.is_err());
@@ -255,7 +274,7 @@ async fn strict_ordinary_and_priority_requests_are_separate_and_countable() {
         json!(["type", "text", "form", "tone", "context"])
     );
     for r in requests.iter() {
-        assert_eq!(r["model"], "mistral-large-latest");
+        assert_eq!(r["model"], "gpt-6-luna");
         assert_eq!(r["response_format"]["json_schema"]["strict"], true);
         assert!(r.get("tools").is_none());
         assert_eq!(r["messages"].as_array().unwrap().len(), 2);

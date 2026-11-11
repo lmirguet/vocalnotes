@@ -8,8 +8,8 @@ use std::{
 };
 const LIMIT: u64 = 16_384;
 static NEXT: AtomicU64 = AtomicU64::new(0);
-pub const STT_MODEL: &str = "voxtral-mini-transcribe-realtime-3-0";
-pub const LLM_MODEL: &str = "mistral-large-latest";
+pub const STT_MODEL: &str = "gpt-realtime-whisper";
+pub const LLM_MODEL: &str = "gpt-6-luna";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -19,7 +19,7 @@ pub struct ServiceSelection {
 }
 impl ServiceSelection {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.provider != "mistral"
+        if self.provider != "openai"
             || self.model.is_empty()
             || self.model.len() > 128
             || !self
@@ -49,11 +49,11 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             stt: ServiceSelection {
-                provider: "mistral".into(),
+                provider: "openai".into(),
                 model: STT_MODEL.into(),
             },
             llm: ServiceSelection {
-                provider: "mistral".into(),
+                provider: "openai".into(),
                 model: LLM_MODEL.into(),
             },
             last_note: None,
@@ -89,16 +89,18 @@ impl Preferences {
 pub struct PreferencesStore {
     path: Option<PathBuf>,
     value: Preferences,
+    migrated: bool,
 }
 impl PreferencesStore {
     pub fn memory() -> Self {
         Self {
             path: None,
             value: Preferences::default(),
+            migrated: false,
         }
     }
     pub fn open(path: PathBuf) -> Result<Self, &'static str> {
-        let value = match fs::symlink_metadata(&path) {
+        let mut value = match fs::symlink_metadata(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Preferences::default(),
             Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() && meta.len() <= LIMIT => {
                 let mut options = OpenOptions::new();
@@ -123,11 +125,30 @@ impl PreferencesStore {
             }
             _ => return Err("Préférences inaccessibles ou fichier non ordinaire."),
         };
+        let mut migrated = false;
+        for (selection, default_model) in [(&mut value.stt, STT_MODEL), (&mut value.llm, LLM_MODEL)]
+        {
+            if selection.provider == "mistral" {
+                let mut historical = selection.clone();
+                historical.provider = "openai".into();
+                historical.validate()?;
+                selection.provider = "openai".into();
+                selection.model = default_model.into();
+                migrated = true;
+            }
+        }
         value.validate()?;
+        if migrated {
+            write_atomic(&path, &value)?;
+        }
         Ok(Self {
             path: Some(path),
             value,
+            migrated,
         })
+    }
+    pub fn was_migrated(&self) -> bool {
+        self.migrated
     }
     pub fn get(&self) -> Preferences {
         self.value.clone()

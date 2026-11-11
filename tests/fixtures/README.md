@@ -48,3 +48,21 @@ Décision utilisateur ultérieure (2026-10-31) : le profil est désormais attach
 à la note et persiste dans le même fichier Markdown. Ses anciennes descriptions
 « temporaire » ci-dessus sont historiques ; audio/transcriptions restent temporaires.
 Voir `docs/validation/note-intention-format.md`.
+
+## Corpus OpenAI bilingue
+
+`openai-fidelity.json` fixe avant recette vingt passages alternés (dix français,
+dix anglais), douze demandes de rédaction et dix interruptions. Les noms de
+projets, montants et situations sont fictifs. Chaque passage contient des
+éléments critiques à contrôler séparément du taux d'erreur de mots.
+
+Les règles de tokenisation et les seuils figurent dans le fichier. Ne pas
+modifier une référence après observation pour transformer un échec en succès.
+Les attentes rédactionnelles permettent des reformulations fidèles ; leur
+évaluation sémantique exige une revue humaine. Le corpus ne contient aucune
+réponse OpenAI enregistrée et ne constitue pas un résultat de qualité.
+
+Suivre le [guide OpenAI](../../specs/002-remplacer-services-openai/quickstart.md)
+pour les mesures de rendu et les recettes natives. Les tests ordinaires sont
+hors réseau. Tout nouvel essai facturable ou enregistrement audio exige un
+accord explicite ; les autorisations de planification ne sont pas réutilisées.

@@ -1,8 +1,5 @@
 //! Shared protocol for native WSS and deterministic in-memory transport tests.
-use crate::{
-    platform::{secrets, stt_transport},
-    ports::stt::{Finality, SttEvent},
-};
+use crate::ports::stt::{ModelProvenance, SttEvent};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -19,6 +16,50 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 const TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_REPLY: usize = 65_536;
 const MAX_AUDIO: usize = 16_000 * 2 * 60;
+
+#[derive(Default)]
+pub struct Finality {
+    finished: bool,
+}
+
+impl Finality {
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn accept(&mut self, value: &Value) -> Result<SttEvent, &'static str> {
+        if self.finished {
+            return Err("Passage déjà finalisé ; événement rejeté.");
+        }
+        match value["type"].as_str() {
+            Some("transcription.text.delta") => {
+                let text = value["text"].as_str().ok_or("Delta STT invalide.")?;
+                if text.len() > MAX_REPLY {
+                    return Err("Réponse STT trop volumineuse.");
+                }
+                Ok(SttEvent::Provisional(text.into()))
+            }
+            Some("transcription.done") => {
+                let text = value["text"].as_str().ok_or("Final STT invalide.")?;
+                let model = value["model"].as_str().ok_or("Modèle STT servi absent.")?;
+                if text.len() > MAX_REPLY || model.len() > 256 || model.trim().is_empty() {
+                    return Err("Réponse STT ou modèle servi invalide.");
+                }
+                self.finished = true;
+                Ok(SttEvent::Final {
+                    text: text.into(),
+                    model: ModelProvenance {
+                        served: Some(model.into()),
+                        ..ModelProvenance::default()
+                    },
+                })
+            }
+            Some("error") => Err("Erreur du service STT ; passage non intégré."),
+            Some(_) => Ok(SttEvent::Other),
+            None => Err("Événement STT invalide."),
+        }
+    }
+}
 
 pub trait JsonSender: Send {
     fn send_json(&mut self, value: Value) -> impl Future<Output = Result<(), &'static str>> + Send;
@@ -232,33 +273,9 @@ impl SttSession<NativeSocket> {
         Self::connect_selected(&crate::config::preferences::Preferences::default().stt).await
     }
     pub async fn connect_selected(
-        selection: &crate::config::preferences::ServiceSelection,
+        _selection: &crate::config::preferences::ServiceSelection,
     ) -> Result<Self, &'static str> {
-        selection.validate()?;
-        let secret = tokio::task::spawn_blocking(secrets::load)
-            .await
-            .map_err(|_| "Trousseau indisponible.")??;
-        let request = stt_transport::request_for_model(&selection.model, Some(secret.as_str()))
-            .map_err(stt_transport::Failure::message)?;
-        let (socket, _) = timeout(
-            TIMEOUT,
-            tokio_tungstenite::connect_async_with_config(
-                request,
-                Some(
-                    tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
-                        .max_message_size(Some(MAX_REPLY))
-                        .max_frame_size(Some(MAX_REPLY)),
-                ),
-                false,
-            ),
-        )
-        .await
-        .map_err(|_| stt_transport::Failure::Timeout.message())?
-        .map_err(|e| stt_transport::classify(&e).message())?;
-        crate::diagnostics::event("STT : connexion WebSocket établie");
-        let stream = Self::open(NativeSocket(socket)).await?;
-        crate::diagnostics::event("STT : format audio acquitté");
-        Ok(stream)
+        Err("Ancien transport Mistral désactivé ; aucun envoi.")
     }
     pub fn into_parts(self) -> (SttWriter, SttReader) {
         let (writer, reader) = self.socket.0.split();

@@ -78,6 +78,18 @@ async function editor(input: string | Snapshot = "", deferred = false) {
   return { app, root, invoke, pending, enter, type, settle, reject: () => { reject = true; }, snapshot: () => s };
 }
 
+it("après migration l'édition manuelle et son annulation restent disponibles", async () => {
+  const e = await editor({ ...empty, preferencesMigrated:true, source:"Note", blocks:[
+    {from:0,to:4,raw:"Note",kind:"paragraph"},
+  ] });
+  e.app.view.dispatch(e.app.view.state.tr.setSelection(TextSelection.atEnd(e.app.view.state.doc)));
+  e.type(" modifiée");
+  await e.settle();
+  expect(e.snapshot().source).toBe("Note modifiée");
+  e.root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.click();
+  await vi.waitFor(() => expect(e.snapshot().source).toBe("Note"));
+});
+
 it("Entrée réelle PM en fin de note garde deux paragraphes, curseur et focus après ack", async () => {
   const e = await editor("un");
   e.app.view.dispatch(e.app.view.state.tr.setSelection(TextSelection.atEnd(e.app.view.state.doc)));

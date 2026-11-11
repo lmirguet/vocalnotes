@@ -3,22 +3,22 @@ type Service = { provider: string; model: string };
 type Models = { stt: Service; llm: Service };
 
 // No secret value is accepted or held here. Key management keeps its dedicated IPC.
-export function createModelPreferencesView(invoke: Invoke) {
+export function createModelPreferencesView(invoke: Invoke, onSaved?: (models: Models) => void) {
   const element = document.createElement("section");
   element.hidden = true; element.setAttribute("aria-label", "Préférences");
   const title = document.createElement("h2"); title.textContent = "Préférences";
   const notice = document.createElement("p");
-  notice.textContent = "Les changements s'appliquent à la prochaine session explicitement démarrée ; une reprise conserve les modèles de la session suspendue. Les modèles personnalisés ne sont pas vérifiés auprès du compte. Aucun contact fournisseur lors de l'enregistrement de ces réglages.";
+  notice.textContent = "La langue est détectée automatiquement. Les changements s'appliquent à la prochaine session explicitement démarrée ; une reprise conserve les modèles de la session suspendue. Les modèles personnalisés ne sont pas vérifiés auprès du compte. Aucun contact fournisseur lors de l'enregistrement de ces réglages.";
   const fields = document.createElement("div");
   const modelFields = ([
-    ["stt", "Transcription", "voxtral-mini-transcribe-realtime-3-0"],
-    ["llm", "Interprétation", "mistral-large-latest"],
+    ["stt", "Transcription", "gpt-realtime-whisper"],
+    ["llm", "Interprétation", "gpt-6-luna"],
   ] as const).map(([key, name, builtin]) => {
     const fieldset = document.createElement("fieldset");
     const legend = document.createElement("legend"); legend.textContent = name;
     const providerLabel = document.createElement("label"); providerLabel.textContent = "Fournisseur ";
     const provider = document.createElement("select"); provider.setAttribute("aria-label", `Fournisseur ${name}`);
-    const option = document.createElement("option"); option.value = "mistral"; option.textContent = "Mistral";
+    const option = document.createElement("option"); option.value = "openai"; option.textContent = "OpenAI";
     provider.append(option); providerLabel.append(provider);
     const label = document.createElement("label"); label.textContent = " Modèle ";
     const input = document.createElement("input"); input.type = "text"; input.maxLength = 128;
@@ -43,7 +43,7 @@ export function createModelPreferencesView(invoke: Invoke) {
     const models = Object.fromEntries(modelFields.map(field => [field.key, { provider:field.provider.value, model:field.input.value }]));
     pending = true; save.disabled = true;
     void invoke("preferences_set", { models }).then(value => {
-      display(value as Models); message.textContent = "Réglages enregistrés pour la prochaine session. Accès aux modèles non testé.";
+      display(value as Models); onSaved?.(value as Models); message.textContent = "Réglages enregistrés pour la prochaine session. Accès aux modèles non testé.";
     }).catch(() => { message.textContent = "Enregistrement impossible ; réglages précédents conservés. Vérifier les identifiants et le fichier de préférences."; })
       .finally(() => { pending = false; save.disabled = !loaded; });
   });

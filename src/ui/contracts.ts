@@ -1,6 +1,7 @@
 export type Block = { from: number; to: number; raw: string; kind: string };
 export type Snapshot = {
   noteId: number; manualPeriod: number; revision: number; generation: number;
+  sessionId?: number; transcriptPassageId?: number; appliedPassageId?: number;
   listeningState?: "stopped" | "starting" | "listening";
   voiceActivity?: string;
   draftingIntention?: { purpose: string; form: string; tone: string; context: string } | null;
@@ -9,8 +10,10 @@ export type Snapshot = {
   failureStage?: "recognition" | "interpretation" | "application" | null;
   mode: string; source: string; dirty: boolean; message: string; blocks: Block[];
   storageMessage?: string;
+  preferencesMigrated?: boolean;
   sttRequests?: number; llmRequests?: number; priorityRequests?: number; audioMs?: number;
   sttModel?: string; llmModel?: string;
+  sttConfiguredModel?: string; sttAcknowledgedModel?: string;
   lastSttFinalMs?: number | null; lastLlmMs?: number | null;
   lastPriorityMs?: number | null; lastCommitUs?: number | null;
   voiceApplied?: number; voiceClarifications?: number; voiceRejected?: number; voiceNoChange?: number;

@@ -143,6 +143,68 @@ fn preferences_are_strict_nonsecret_and_survive_restart() {
 }
 
 #[test]
+fn defaults_select_openai_without_content_or_secrets() {
+    let preferences = Preferences::default();
+    assert_eq!(preferences.stt.provider, "openai");
+    assert_eq!(preferences.stt.model, "gpt-realtime-whisper");
+    assert_eq!(preferences.llm.provider, "openai");
+    assert_eq!(preferences.llm.model, "gpt-6-luna");
+    let value = serde_json::to_value(preferences).unwrap();
+    assert_eq!(value.as_object().unwrap().len(), 3);
+    assert!(value["lastNote"].is_null());
+}
+
+#[test]
+fn migration_notification_is_typed_and_only_follows_persisted_migration() {
+    use vocalnotes_lib::platform::{controller::Controller, probe::Probe};
+    let root = folder();
+    let path = root.join("preferences.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "stt":{"provider":"mistral","model":"historical-stt"},
+            "llm":{"provider":"mistral","model":"historical-llm"},
+            "lastNote":null
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let store = PreferencesStore::open(path.clone()).unwrap();
+    let c = Controller::with_preferences(Probe::new("note".into()), Ok(store));
+    let snapshot = c.core.lock().unwrap().snapshot();
+    assert!(snapshot.preferences_migrated);
+    assert_eq!(snapshot.source, "note");
+    let snapshot = serde_json::to_value(snapshot).unwrap();
+    assert_eq!(snapshot["preferencesMigrated"], true);
+    assert!(!snapshot.to_string().contains("historical"));
+    let c = Controller::with_preferences(Probe::new("note".into()), PreferencesStore::open(path));
+    assert!(!c.core.lock().unwrap().snapshot().preferences_migrated);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn openai_selection_model_boundaries_are_local_and_exact() {
+    for (model, valid) in [
+        ("test-model_1.0".to_string(), true),
+        ("m".repeat(128), true),
+        ("m".repeat(129), false),
+        (String::new(), false),
+        ("modèle".to_string(), false),
+        ("x?secret=y".to_string(), false),
+    ] {
+        assert_eq!(
+            ServiceSelection {
+                provider: "openai".into(),
+                model
+            }
+            .validate()
+            .is_ok(),
+            valid
+        );
+    }
+}
+
+#[test]
 fn model_choices_are_independent_validated_and_frozen_for_a_session() {
     let mut store = PreferencesStore::memory();
     let frozen = store.session_models().unwrap();
@@ -159,7 +221,7 @@ fn model_choices_are_independent_validated_and_frozen_for_a_session() {
         "x\nheader",
     ] {
         let bad = ServiceSelection {
-            provider: "mistral".into(),
+            provider: "openai".into(),
             model: model.into(),
         };
         let mut next = store.get();
@@ -167,7 +229,7 @@ fn model_choices_are_independent_validated_and_frozen_for_a_session() {
         assert!(store.save(next).is_err());
     }
     let mut bad = store.get();
-    bad.llm.provider = "openai".into();
+    bad.llm.provider = "unknown-provider".into();
     assert!(store.save(bad).is_err());
 }
 
@@ -213,13 +275,8 @@ fn controller_uses_frozen_models_until_a_new_explicit_session() {
 fn selected_stt_model_cannot_change_host_or_add_credentials_to_url() {
     use vocalnotes_lib::platform::stt_transport::request_for_model;
     let request = request_for_model("voxtral-test-unverified", Some("synthetic-key")).unwrap();
-    assert_eq!(request.uri().host(), Some("api.mistral.ai"));
-    assert!(
-        request
-            .uri()
-            .to_string()
-            .ends_with("model=voxtral-test-unverified")
-    );
+    assert_eq!(request.uri().host(), Some("api.openai.com"));
+    assert!(request.uri().to_string().ends_with("intent=transcription"));
     assert!(!request.uri().to_string().contains("synthetic-key"));
     assert!(request.headers()["Authorization"].is_sensitive());
     assert!(request_for_model("x&api_key=bad", None).is_err());

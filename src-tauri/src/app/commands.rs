@@ -108,7 +108,7 @@ pub fn execute_action(controller: &Controller, action: Command) -> Result<Snapsh
     match action {
         Command::Start { consent, resume } => {
             if !consent {
-                return Err("Information et accord micro/Mistral/coût requis.");
+                return Err("Information et accord micro/OpenAI/coût requis.");
             }
             controller.start_explicit(resume)?;
         }

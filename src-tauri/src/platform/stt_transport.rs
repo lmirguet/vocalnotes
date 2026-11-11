@@ -3,7 +3,7 @@ use tokio_tungstenite::tungstenite::{
     Error, client::IntoClientRequest, error::ProtocolError, http::HeaderValue,
 };
 
-pub const URL: &str = "wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=voxtral-mini-transcribe-realtime-3-0";
+pub const URL: &str = "wss://api.openai.com/v1/realtime?intent=transcription";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Failure {
@@ -36,7 +36,7 @@ impl Failure {
                 "STT [tls-certificate] : certificat non accepté ; aucun contournement."
             }
             Self::Authentication => "STT [http-401] : authentification refusée.",
-            Self::Access => "STT [http-403] : accès refusé.",
+            Self::Access => "STT [http-access] : accès ou modèle refusé (403/404).",
             Self::QuotaOrRateLimit => {
                 "STT [http-429] : quota ou limite de requêtes ; aucun nouvel essai automatique."
             }
@@ -69,13 +69,12 @@ pub fn request_for_model(
     secret: Option<&str>,
 ) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request, Failure> {
     crate::config::preferences::ServiceSelection {
-        provider: "mistral".into(),
+        provider: "openai".into(),
         model: model.into(),
     }
     .validate()
     .map_err(|_| Failure::Configuration)?;
-    let url = format!("wss://api.mistral.ai/v1/audio/transcriptions/realtime?model={model}");
-    let mut request = url
+    let mut request = URL
         .into_client_request()
         .map_err(|_| Failure::Configuration)?;
     if let Some(secret) = secret {
@@ -115,7 +114,7 @@ pub fn classify(error: &Error) -> Failure {
         Error::Tls(_) => Failure::Tls,
         Error::Http(response) => match response.status().as_u16() {
             401 => Failure::Authentication,
-            403 => Failure::Access,
+            403 | 404 => Failure::Access,
             429 => Failure::QuotaOrRateLimit,
             400..=499 => Failure::HttpClient,
             500..=599 => Failure::HttpServer,
@@ -183,12 +182,9 @@ mod tests {
             tokio_tungstenite::tungstenite::http::Version::HTTP_11
         );
         assert_eq!(r.uri().scheme_str(), Some("wss"));
-        assert_eq!(r.uri().host(), Some("api.mistral.ai"));
-        assert_eq!(r.uri().path(), "/v1/audio/transcriptions/realtime");
-        assert_eq!(
-            r.uri().query(),
-            Some("model=voxtral-mini-transcribe-realtime-3-0")
-        );
+        assert_eq!(r.uri().host(), Some("api.openai.com"));
+        assert_eq!(r.uri().path(), "/v1/realtime");
+        assert_eq!(r.uri().query(), Some("intent=transcription"));
         assert_eq!(r.headers()["upgrade"], "websocket");
         assert_eq!(r.headers()["connection"], "Upgrade");
         assert_eq!(r.headers()["sec-websocket-version"], "13");
@@ -218,7 +214,7 @@ mod tests {
             (403, Failure::Access),
             (429, Failure::QuotaOrRateLimit),
             (400, Failure::HttpClient),
-            (404, Failure::HttpClient),
+            (404, Failure::Access),
             (500, Failure::HttpServer),
             (302, Failure::HttpOther),
         ] {

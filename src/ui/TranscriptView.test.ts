@@ -22,3 +22,23 @@ it("affiche le texte comme données et purge la vue quand la session finit", () 
   view.render({ ...base, transcriptEnabled: false });
   expect(view.element.querySelector("pre")!.textContent).toBe("");
 });
+
+it("rend les deltas avant le final sans concaténer une seconde fois le texte complet", () => {
+  const view = createTranscriptView(vi.fn());
+  const base = { mode: "voice", transcriptEnabled: true,
+    transcriptProvisional: "Hello", transcriptFinal: "" } as Snapshot;
+  const [provisional, final] = view.element.querySelectorAll("pre");
+  view.render(base);
+  expect(provisional!.textContent).toBe("Hello");
+  expect(final!.textContent).toBe("");
+  view.render({ ...base, transcriptProvisional: "Hello world" });
+  expect(provisional!.textContent).toBe("Hello world");
+  view.render({ ...base, transcriptProvisional: "", transcriptFinal: "Hello world." });
+  expect(provisional!.textContent).toBe("");
+  expect(final!.textContent).toBe("Hello world.");
+  view.render({ ...base, transcriptProvisional: "Bonjour", transcriptFinal: "Hello world." });
+  expect(provisional!.textContent).toBe("Bonjour");
+  view.render({ ...base, mode: "manual" });
+  expect(provisional!.textContent).toBe("");
+  expect(final!.textContent).toBe("");
+});

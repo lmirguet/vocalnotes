@@ -1,6 +1,6 @@
 use zeroize::Zeroizing;
 const SERVICE: &str = "fr.vocalnotes.desktop";
-const USER: &str = "mistral";
+const USER: &str = "openai";
 
 // No global builder, no file/env import and no mock/memory fallback.
 // Deliberately no Debug/Serialize implementation and no exposed secret getter.
@@ -93,4 +93,16 @@ pub fn presence() -> Result<bool, &'static str> {
 }
 pub(crate) fn load() -> Result<Zeroizing<String>, &'static str> {
     app_store()?.load()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_account_is_isolated_from_historical_mistral() {
+        assert_eq!(SERVICE, "fr.vocalnotes.desktop");
+        assert_eq!(USER, "openai");
+        assert_ne!(USER, "mistral");
+    }
 }

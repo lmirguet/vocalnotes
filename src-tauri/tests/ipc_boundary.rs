@@ -115,6 +115,20 @@ fn capabilities_only_grant_the_registered_local_commands() {
 }
 
 #[test]
+fn openai_key_ipc_can_only_return_presence_or_unit_never_the_secret() {
+    use std::future::Future;
+    use vocalnotes_lib::app::commands::{
+        prototype_delete_key, prototype_key_presence, prototype_set_key,
+    };
+    fn presence_only(_: impl Future<Output = Result<bool, &'static str>>) {}
+    fn no_value(_: impl Future<Output = Result<(), &'static str>>) {}
+    // Futures are type-checked and dropped without polling or touching a real keyring.
+    presence_only(prototype_key_presence());
+    no_value(prototype_set_key("synthetic-nonsecret-test".into()));
+    no_value(prototype_delete_key());
+}
+
+#[test]
 fn navigation_is_restricted_to_the_embedded_page_or_exact_dev_origin() {
     for url in [
         "https://example.test/",

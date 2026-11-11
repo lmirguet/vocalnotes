@@ -49,6 +49,11 @@ pub struct Snapshot {
     pub priority_requests: u64,
     pub audio_ms: u64,
     pub stt_model: String,
+    pub stt_configured_model: String,
+    pub stt_acknowledged_model: String,
+    pub preferences_migrated: bool,
+    pub transcript_passage_id: u64,
+    pub applied_passage_id: u64,
     pub llm_model: String,
     pub last_stt_final_ms: Option<u64>,
     pub last_llm_ms: Option<u64>,
@@ -276,6 +281,11 @@ impl Note {
                 priority_requests: 0,
                 audio_ms: 0,
                 stt_model: String::new(),
+                stt_configured_model: String::new(),
+                stt_acknowledged_model: String::new(),
+                preferences_migrated: false,
+                transcript_passage_id: 0,
+                applied_passage_id: 0,
                 llm_model: String::new(),
                 last_stt_final_ms: None,
                 last_llm_ms: None,
@@ -417,6 +427,11 @@ impl Note {
         }
         self.clear_transcript();
         self.state.failure_stage = None;
+        self.state.stt_model.clear();
+        self.state.stt_configured_model.clear();
+        self.state.stt_acknowledged_model.clear();
+        self.state.transcript_passage_id = 0;
+        self.state.applied_passage_id = 0;
         if !resume {
             self.state.session_id += 1;
         }
@@ -427,7 +442,7 @@ impl Note {
         self.state.mode = "voice";
         self.state.listening_state = "starting";
         self.state.voice_activity = "idle";
-        self.state.message = "Écoute — Mistral STT/LLM ; coût inconnu.".into();
+        self.state.message = "Écoute — OpenAI STT/LLM ; coût inconnu.".into();
         Ok(())
     }
 
@@ -583,6 +598,10 @@ impl Note {
             "priority" => self.state.priority_requests += value,
             "audio" => self.state.audio_ms += value,
             "stt_model" => self.state.stt_model = model.into(),
+            "stt_configured_model" => self.state.stt_configured_model = model.into(),
+            "stt_acknowledged_model" => self.state.stt_acknowledged_model = model.into(),
+            "transcript_passage" => self.state.transcript_passage_id = value,
+            "applied_passage" => self.state.applied_passage_id = value,
             "llm_model" => self.state.llm_model = model.into(),
             "stt_final_ms" => self.state.last_stt_final_ms = Some(value),
             "llm_ms" => self.state.last_llm_ms = Some(value),
@@ -590,6 +609,11 @@ impl Note {
             "commit_us" => self.state.last_commit_us = Some(value),
             _ => {}
         }
+    }
+
+    pub fn preferences_migrated(&mut self) {
+        self.state.preferences_migrated = true;
+        self.state.message = "Configuration migrée vers OpenAI ; renseignez la clé OpenAI dans le trousseau si nécessaire.".into();
     }
 
     pub fn is_current(&self, ticket: &Ticket) -> bool {

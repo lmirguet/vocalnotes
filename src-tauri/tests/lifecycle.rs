@@ -25,6 +25,9 @@ struct State {
     failure: AtomicBool,
     hold_capture: AtomicBool,
     invalidate_before_ready: AtomicBool,
+    hold_transcription: AtomicBool,
+    transcription_failure: AtomicBool,
+    key_missing: AtomicBool,
 }
 #[derive(Clone, Default)]
 struct Devices(Arc<State>);
@@ -52,7 +55,39 @@ impl Drop for Capture {
         self.0.stop();
     }
 }
+struct SilentStt;
+impl vocalnotes_lib::ports::stt::SttInput for SilentStt {
+    async fn append_pcm(&mut self, _: &[u8]) -> Result<(), &'static str> {
+        Ok(())
+    }
+    async fn end_passage(&mut self) -> Result<(), &'static str> {
+        Ok(())
+    }
+}
+impl vocalnotes_lib::ports::stt::SttOutput for SilentStt {
+    async fn next_event(&mut self) -> Result<vocalnotes_lib::ports::stt::SttEvent, &'static str> {
+        std::future::pending().await
+    }
+}
+impl vocalnotes_lib::ports::stt::LiveStt for SilentStt {
+    fn begin_passage(&mut self) -> Result<(), &'static str> {
+        Ok(())
+    }
+}
 impl SessionDevices for Devices {
+    type Transcription = SilentStt;
+    async fn transcription(
+        &self,
+        _: &vocalnotes_lib::config::preferences::ServiceSelection,
+    ) -> Result<SilentStt, &'static str> {
+        while self.0.hold_transcription.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        if self.0.transcription_failure.load(Ordering::SeqCst) {
+            return Err("STT [configuration] : échec simulé.");
+        }
+        Ok(SilentStt)
+    }
     async fn monitor(
         &self,
         _: Arc<AtomicBool>,
@@ -69,7 +104,7 @@ impl SessionDevices for Devices {
     }
     async fn key_present(&self) -> Result<bool, &'static str> {
         self.0.key_checks.fetch_add(1, Ordering::SeqCst);
-        Ok(true)
+        Ok(!self.0.key_missing.load(Ordering::SeqCst))
     }
     async fn capture(&self, stop: Arc<AtomicBool>) -> Result<Box<dyn CaptureStream>, &'static str> {
         assert!(!stop.load(Ordering::Acquire));
@@ -93,6 +128,39 @@ async fn wait_until(mut ready: impl FnMut() -> bool) {
 async fn listening(c: &Controller, d: &Devices) {
     c.start_with_devices(false, d.clone()).unwrap();
     wait_until(|| c.core.lock().unwrap().snapshot().listening_state == "listening").await;
+}
+
+#[tokio::test]
+async fn configuration_ack_precedes_capture_and_ready_and_is_cancellable() {
+    let c = Controller::new(Probe::new("note".into()));
+    let d = Devices::default();
+    d.0.hold_transcription.store(true, Ordering::SeqCst);
+    c.start_with_devices(false, d.clone()).unwrap();
+    wait_until(|| d.0.key_checks.load(Ordering::SeqCst) == 1).await;
+    assert_eq!(d.0.opens.load(Ordering::SeqCst), 0);
+    assert_ne!(
+        c.core.lock().unwrap().snapshot().listening_state,
+        "listening"
+    );
+    c.stop(false, "arrêt pendant configuration");
+    d.0.hold_transcription.store(false, Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(d.0.opens.load(Ordering::SeqCst), 0);
+    assert_eq!(c.core.lock().unwrap().snapshot().mode, "manual");
+}
+
+#[tokio::test]
+async fn configuration_failure_and_missing_key_never_open_microphone() {
+    for missing in [true, false] {
+        let c = Controller::new(Probe::new("note".into()));
+        let d = Devices::default();
+        d.0.key_missing.store(missing, Ordering::SeqCst);
+        d.0.transcription_failure.store(!missing, Ordering::SeqCst);
+        c.start_with_devices(false, d.clone()).unwrap();
+        wait_until(|| c.core.lock().unwrap().snapshot().voice_activity == "error").await;
+        assert_eq!(d.0.opens.load(Ordering::SeqCst), 0);
+        assert_eq!(c.core.lock().unwrap().snapshot().mode, "manual");
+    }
 }
 #[tokio::test]
 async fn explicit_start_then_silence_keeps_listening_until_pause_and_resume_is_explicit() {
@@ -224,4 +292,70 @@ fn already_cancelled_native_monitor_never_subscribes_or_calls_back() {
         ))
         .is_err()
     );
+}
+
+#[tokio::test]
+async fn ten_fixed_interruptions_discard_late_transcripts_and_edits_without_reopening_capture() {
+    use vocalnotes_lib::{
+        platform::probe::{Action, Intervention},
+        ports::interpreter::{EditOperation, Status, Target},
+    };
+    let corpus: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/fixtures/openai-fidelity.json")).unwrap();
+    let cases = corpus["interruptions"].as_array().unwrap();
+    assert_eq!(cases.len(), 10);
+    for case in cases {
+        let c = Controller::new(Probe::new("note".into()));
+        let d = Devices::default();
+        listening(&c, &d).await;
+        let ticket = {
+            let mut core = c.core.lock().unwrap();
+            core.set_transcript_enabled(true).unwrap();
+            if case["during"] == "partial" {
+                core.transcript_delta("provisoire fictif");
+            } else {
+                assert_eq!(case["during"], "interpretation");
+                core.transcript_done("final fictif");
+                core.processing();
+            }
+            core.voice_ticket_for(1, 1).unwrap()
+        };
+        match case["event"].as_str().unwrap() {
+            "pause" => c.stop(true, "pause"),
+            "stop" => c.stop(false, "arrêt"),
+            "lock" | "sleep" => (d.0.callback.lock().unwrap().clone().unwrap())(),
+            "close" => {
+                vocalnotes_lib::app::close::begin(&c).unwrap();
+            }
+            _ => panic!("unknown fixed interruption"),
+        };
+        assert!(d.0.stopped.load(Ordering::SeqCst), "{case}");
+        let mut core = c.core.lock().unwrap();
+        core.transcript_done("final tardif fictif");
+        for _duplicate in 0..2 {
+            let late = Intervention {
+                status: Status::Resolved,
+                message: String::new(),
+                actions: vec![Action::Edit {
+                    operation: EditOperation::Replace {
+                        target: Target {
+                            block_id: "b0".into(),
+                            expected: "note".into(),
+                        },
+                        text: "modification interdite".into(),
+                    },
+                }],
+            };
+            assert!(core.commit_voice(&ticket, late).is_err(), "{case}");
+        }
+        let snapshot = core.snapshot();
+        assert_eq!(snapshot.source, "note");
+        assert_eq!(snapshot.revision, 0);
+        assert!(snapshot.drafting_intention.is_none());
+        assert!(snapshot.transcript_provisional.is_empty());
+        assert!(snapshot.transcript_final.is_empty());
+        drop(core);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(d.0.opens.load(Ordering::SeqCst), 1);
+    }
 }

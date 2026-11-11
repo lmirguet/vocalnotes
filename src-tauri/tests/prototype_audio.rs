@@ -46,3 +46,31 @@ fn bad_format_and_unbounded_input_fail_explicitly() {
     assert!(audio.push_interleaved(&[f32::NAN, 0.0]).is_err());
     assert!(audio.push_interleaved(&vec![0.0; 32_000]).is_err());
 }
+#[test]
+fn openai_resampling_flushes_exact_duration_and_preserves_signal() {
+    use vocalnotes_lib::audio::openai_pcm::OpenAiPcm;
+    for frames in [1, 11, 101, 2000] {
+        let mut converter = OpenAiPcm::new().unwrap();
+        let pcm: Vec<u8> = (0..480)
+            .flat_map(|i| {
+                let value =
+                    ((i as f32 * std::f32::consts::TAU * 440.0 / 16000.0).sin() * 12000.0) as i16;
+                value.to_le_bytes()
+            })
+            .collect();
+        let mut output = vec![];
+        for _ in 0..frames {
+            output.extend(converter.push(&pcm).unwrap());
+        }
+        output.extend(converter.finish().unwrap());
+        assert_eq!(output.len(), frames * 480 * 3);
+        assert!(
+            output
+                .chunks_exact(2)
+                .any(|s| i16::from_le_bytes([s[0], s[1]]).unsigned_abs() > 10000)
+        );
+        assert!(converter.finish().is_err());
+    }
+    let mut converter = OpenAiPcm::new().unwrap();
+    assert!(converter.push(&[0]).is_err());
+}

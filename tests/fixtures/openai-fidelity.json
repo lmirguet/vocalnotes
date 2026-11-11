@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "normalization": {
+    "unicode": "NFC",
+    "case": "lowercase",
+    "punctuation": "replace punctuation with spaces; preserve apostrophes inside words",
+    "tokens": "split on whitespace",
+    "numbers": "preserve digits and number words without substitution",
+    "wer": "(substitutions + deletions + insertions) / reference_tokens",
+    "critical": "review names, numbers and negations separately; no semantic change allowed"
+  },
+  "thresholds": {
+    "maxWerPerLanguage": 0.1,
+    "firstRenderedPartialMs": 2000,
+    "renderedNoteAfterSpeechEndMs": 5000,
+    "minimumLatencySuccesses": 18,
+    "passagesPerSession": 20,
+    "draftingSuccesses": 12,
+    "interruptionSequences": 10
+  },
+  "passages": [
+    {"id":"fr01","language":"fr","text":"Prépare une note sur le projet Orion. Le budget est de quarante euros, pas de quatre cents euros.","critical":["Orion","quarante euros","pas de quatre cents euros"]},
+    {"id":"en01","language":"en","text":"Prepare a note about project Atlas. The budget is thirty pounds, not three hundred pounds.","critical":["Atlas","thirty pounds","not three hundred pounds"]},
+    {"id":"fr02","language":"fr","text":"La livraison de Nova est prévue mardi à quinze heures. Elle ne doit pas partir lundi.","critical":["Nova","mardi","quinze heures","ne doit pas partir lundi"]},
+    {"id":"en02","language":"en","text":"The Vega delivery is scheduled for Thursday at eleven. It must not leave on Wednesday.","critical":["Vega","Thursday","eleven","must not leave on Wednesday"]},
+    {"id":"fr03","language":"fr","text":"Pour le dossier Boréal, nous avons besoin de douze cartons et de trois boîtes. Ne commande pas de ruban.","critical":["Boréal","douze","trois","Ne commande pas de ruban"]},
+    {"id":"en03","language":"en","text":"For the Cedar file, we need fourteen cartons and two boxes. Do not order any tape.","critical":["Cedar","fourteen","two","Do not order any tape"]},
+    {"id":"fr04","language":"fr","text":"Le prototype Iris mesure vingt centimètres. Sa couleur sera bleue, mais la taille ne change pas.","critical":["Iris","vingt centimètres","la taille ne change pas"]},
+    {"id":"en04","language":"en","text":"The Maple prototype is eighteen centimetres long. Its colour will be green, but its size does not change.","critical":["Maple","eighteen centimetres","size does not change"]},
+    {"id":"fr05","language":"fr","text":"Le groupe Quartz prépare cinq essais pour vendredi. Aucun résultat ne doit être publié avant la validation.","critical":["Quartz","cinq","vendredi","Aucun résultat ne doit être publié"]},
+    {"id":"en05","language":"en","text":"The Amber group is preparing six trials for Monday. No result may be published before validation.","critical":["Amber","six","Monday","No result may be published"]},
+    {"id":"fr06","language":"fr","text":"Dans le projet Opale, le délai est de sept jours. Cette durée ne comprend pas le transport.","critical":["Opale","sept jours","ne comprend pas le transport"]},
+    {"id":"en06","language":"en","text":"In the Flint project, the deadline is eight days. This period does not include transport.","critical":["Flint","eight days","does not include transport"]},
+    {"id":"fr07","language":"fr","text":"Le stock de Saphir contient vingt et une pièces neuves. Nous ne conservons aucune pièce cassée.","critical":["Saphir","vingt et une","aucune pièce cassée"]},
+    {"id":"en07","language":"en","text":"The Birch stock contains twenty two new parts. We are not keeping any broken parts.","critical":["Birch","twenty two","not keeping any broken parts"]},
+    {"id":"fr08","language":"fr","text":"Pour l'atelier Érable, réserve une table de huit places. La salle ne sera pas disponible samedi.","critical":["Érable","huit places","ne sera pas disponible samedi"]},
+    {"id":"en08","language":"en","text":"For the Willow workshop, reserve a table with nine seats. The room will not be available on Sunday.","critical":["Willow","nine seats","not be available on Sunday"]},
+    {"id":"fr09","language":"fr","text":"Le test Aurore a duré cinquante secondes. Il ne faut pas le présenter comme une minute complète.","critical":["Aurore","cinquante secondes","ne faut pas","une minute complète"]},
+    {"id":"en09","language":"en","text":"The Dawn test lasted forty seconds. It must not be described as a full minute.","critical":["Dawn","forty seconds","must not","full minute"]},
+    {"id":"fr10","language":"fr","text":"Le dossier Lune contient deux annexes et une conclusion. N'ajoute aucun chiffre qui ne figure pas dans mes propos.","critical":["Lune","deux annexes","une conclusion","N'ajoute aucun chiffre"]},
+    {"id":"en10","language":"en","text":"The Moon file contains three appendices and one conclusion. Do not add any figures that I have not mentioned.","critical":["Moon","three appendices","one conclusion","Do not add any figures"]}
+  ],
+  "drafting": [
+    {"id":"draft-fr01","language":"fr","kind":"draft","initial":"","request":"Rédige une note : le projet Orion a un budget de quarante euros et la livraison est mardi.","expected":{"contains":["Orion","quarante euros","mardi"],"noInventedFacts":true,"language":"fr"}},
+    {"id":"draft-en01","language":"en","kind":"draft","initial":"","request":"Write a note: project Atlas has a budget of thirty pounds and delivery is on Thursday.","expected":{"contains":["Atlas","thirty pounds","Thursday"],"noInventedFacts":true,"language":"en"}},
+    {"id":"draft-fr02","language":"fr","kind":"correction","initial":"Le budget est de dix euros.\n\nLa livraison est mardi.","request":"Remplace dix euros par vingt euros et conserve la date de livraison.","expected":{"contains":["vingt euros","mardi"],"excludes":["dix euros"],"language":"fr"}},
+    {"id":"draft-en02","language":"en","kind":"correction","initial":"The budget is ten pounds.\n\nDelivery is on Thursday.","request":"Replace ten pounds with twenty pounds and keep the delivery date.","expected":{"contains":["twenty pounds","Thursday"],"excludes":["ten pounds"],"language":"en"}},
+    {"id":"draft-fr03","language":"fr","kind":"intention","initial":"","request":"Pour la suite, rédige un compte rendu bref sous forme de liste, avec un ton neutre.","expected":{"intention":{"goal":"compte rendu","form":"liste","tone":"neutre"},"noInventedFacts":true,"language":"fr"}},
+    {"id":"draft-en03","language":"en","kind":"intention","initial":"","request":"From now on, write a brief meeting summary as a list, using a neutral tone.","expected":{"intention":{"goal":"meeting summary","form":"list","tone":"neutral"},"noInventedFacts":true,"language":"en"}},
+    {"id":"draft-fr04","language":"fr","kind":"ambiguity","initial":"Le projet Orion coûte dix euros.\n\nLe projet Nova coûte vingt euros.","request":"Remplace le prix par trente euros.","expected":{"status":"clarify","actions":[],"sourceUnchanged":true}},
+    {"id":"draft-en04","language":"en","kind":"ambiguity","initial":"Project Atlas costs ten pounds.\n\nProject Vega costs twenty pounds.","request":"Replace the price with thirty pounds.","expected":{"status":"clarify","actions":[],"sourceUnchanged":true}},
+    {"id":"draft-fr05","language":"fr","kind":"correction","initial":"Le budget est de vingt euros.\n\nLa livraison est mardi.","request":"Supprime seulement la phrase sur le budget.","expected":{"contains":["mardi"],"excludes":["vingt euros"],"language":"fr"}},
+    {"id":"draft-en05","language":"en","kind":"correction","initial":"The budget is twenty pounds.\n\nDelivery is on Thursday.","request":"Delete only the sentence about the budget.","expected":{"contains":["Thursday"],"excludes":["twenty pounds"],"language":"en"}},
+    {"id":"draft-fr06","language":"fr","kind":"draft","initial":"La livraison est mardi.","request":"Ajoute que le transport ne comprend pas les assurances, puis mets en pause.","expected":{"contains":["mardi","ne comprend pas les assurances"],"terminalCommand":"pause","terminalLast":true,"language":"fr"}},
+    {"id":"draft-en06","language":"en","kind":"draft","initial":"Delivery is on Thursday.","request":"Add that transport does not include insurance, then pause.","expected":{"contains":["Thursday","does not include insurance"],"terminalCommand":"pause","terminalLast":true,"language":"en"}}
+  ],
+  "interruptions": [
+    {"id":"interrupt01","event":"pause","during":"partial"},
+    {"id":"interrupt02","event":"pause","during":"interpretation"},
+    {"id":"interrupt03","event":"stop","during":"partial"},
+    {"id":"interrupt04","event":"stop","during":"interpretation"},
+    {"id":"interrupt05","event":"lock","during":"partial"},
+    {"id":"interrupt06","event":"lock","during":"interpretation"},
+    {"id":"interrupt07","event":"sleep","during":"partial"},
+    {"id":"interrupt08","event":"sleep","during":"interpretation"},
+    {"id":"interrupt09","event":"close","during":"partial"},
+    {"id":"interrupt10","event":"close","during":"interpretation"}
+  ],
+  "interruptionExpected": {
+    "noLateApplication": true,
+    "noDuplicates": true,
+    "captureStopped": true,
+    "noAutomaticResume": true,
+    "saveFailurePreventsSilentClose": true
+  }
+}

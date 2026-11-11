@@ -28,7 +28,7 @@ export function createToolbar(actions: {
   const buttons = formatting.map(([label, action, command]) => button(element, label, action, () => actions.format(command)));
   const label = document.createElement("label");
   const consent = document.createElement("input"); consent.type = "checkbox"; consent.dataset.consent = "voice";
-  label.append(consent, document.createTextNode("J'autorise le micro et les envois Mistral décrits ci-dessus, coût inconnu."));
+  label.append(consent, document.createTextNode("J'autorise le micro et les envois à OpenAI décrits ci-dessus, coût et conservation inconnus."));
   element.append(label); consent.addEventListener("change", actions.changed);
   const startButton = button(element, "Démarrer le vocal", "start", () => actions.act({ type: "start", consent: consent.checked, resume: false }));
   const resumeButton = button(element, "Reprendre explicitement", "resume", () => actions.act({ type: "start", consent: consent.checked, resume: true }));

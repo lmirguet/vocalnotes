@@ -561,7 +561,7 @@ fn inconsistent_provider_status_is_rejected_with_service_error() {
 }
 
 #[test]
-fn wire_schema_separates_resolved_edits_from_clarification() {
+fn wire_schema_is_a_closed_root_object_and_local_guards_separate_outcomes() {
     for source in ["", "Première idée."] {
         let note = Note::new(source.into());
         let format = response_format_for_context(&InterpretationContext {
@@ -569,32 +569,16 @@ fn wire_schema_separates_resolved_edits_from_clarification() {
             save_available: false,
         });
         let schema = &format["json_schema"]["schema"];
-        let alternatives = schema["anyOf"]
-            .as_array()
-            .expect("exclusive envelope alternatives");
-        assert_eq!(alternatives.len(), 2);
+        assert_eq!(schema["type"], "object");
+        assert!(schema.get("anyOf").is_none());
+        assert_eq!(schema["required"], json!(["status", "message", "actions"]));
         assert_eq!(
-            alternatives[0]["properties"]["status"]["enum"],
-            json!(["resolved"])
+            schema["properties"]["status"]["enum"],
+            json!(["resolved", "clarify"])
         );
-        assert_eq!(
-            alternatives[0]["properties"]["message"]["enum"],
-            json!([""])
-        );
-        assert_eq!(
-            alternatives[1]["properties"]["status"]["enum"],
-            json!(["clarify"])
-        );
-        assert_eq!(alternatives[1]["properties"]["actions"]["maxItems"], 0);
-        assert_eq!(
-            alternatives[1]["properties"]["message"]["pattern"],
-            json!(r"\S")
-        );
-        assert_eq!(
-            alternatives[0]["properties"]["actions"],
-            schema["properties"]["actions"]
-        );
-        // Synthetic schema only, also checked offline with a full JSON Schema validator.
+        assert_eq!(schema["properties"]["actions"]["maxItems"], 32);
+        assert_eq!(schema["additionalProperties"], false);
+        // Cross-field consistency remains enforced by decode_intervention locally.
         println!("ENVELOPE_SCHEMA {}", schema);
     }
 }

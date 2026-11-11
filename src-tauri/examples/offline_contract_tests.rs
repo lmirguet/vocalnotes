@@ -65,3 +65,16 @@ mod lifecycle;
 #[cfg(test)]
 #[path = "../tests/drafting.rs"]
 mod drafting;
+
+#[cfg(test)]
+#[path = "../tests/openai_interpreter.rs"]
+mod openai_interpreter;
+#[cfg(test)]
+#[path = "../tests/openai_preferences.rs"]
+mod openai_preferences;
+#[cfg(test)]
+#[path = "../tests/openai_priority.rs"]
+mod openai_priority;
+#[cfg(test)]
+#[path = "../tests/openai_stt.rs"]
+mod openai_stt;

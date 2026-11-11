@@ -1,16 +1,14 @@
 //! Stateless Mistral interpretation with a strict local response contract.
 use crate::domain::intention::DraftingIntention;
-use crate::platform::secrets;
 use crate::ports::interpreter::{
     Action, EditOperation, InterpretationContext, Interruption, Intervention, object,
     response_format_for_context,
 };
 use crate::ports::interpreter::{decode_interrupt, decode_intervention};
 use serde_json::{Value, json};
-use std::{future::Future, time::Duration};
+use std::future::Future;
 const CHAT_URL: &str = "https://api.mistral.ai/v1/chat/completions";
 const MAX_REPLY: usize = 65_536;
-const TIMEOUT: Duration = Duration::from_secs(45);
 
 pub struct ChatReply {
     pub status: u16,
@@ -40,41 +38,8 @@ pub fn build_request(
 }
 impl ChatTransport for NativeChatTransport {
     async fn execute(&self, request: Value) -> Result<ChatReply, &'static str> {
-        let secret = tokio::task::spawn_blocking(secrets::load)
-            .await
-            .map_err(|_| "Trousseau indisponible.")??;
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(TIMEOUT)
-            .https_only(true)
-            .build()
-            .map_err(|_| "Transport LLM indisponible.")?;
-        let request = build_request(&client, secret.as_str(), &request)?;
-        let mut response = client
-            .execute(request)
-            .await
-            .map_err(|_| "Requête LLM impossible (réseau, TLS ou compte).")?;
-        let status = response.status().as_u16();
-        crate::diagnostics::numbers("LLM : réponse HTTP", &[("status", u64::from(status))]);
-        // Discard error payloads, do not inspect/log/store private provider diagnostics.
-        if !(200..300).contains(&status) {
-            return Ok(ChatReply {
-                status,
-                body: vec![],
-            });
-        }
-        let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| "Réponse LLM interrompue.")?
-        {
-            if body.len() + chunk.len() > MAX_REPLY {
-                return Err("Réponse LLM trop volumineuse.");
-            }
-            body.extend_from_slice(&chunk);
-        }
-        Ok(ChatReply { status, body })
+        let _ = request;
+        Err("Ancien transport Mistral désactivé ; aucun envoi.")
     }
 }
 pub struct MistralInterpreter<T = NativeChatTransport> {
