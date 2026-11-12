@@ -2,6 +2,8 @@ export type Block = { from: number; to: number; raw: string; kind: string };
 export type Snapshot = {
   noteId: number; manualPeriod: number; revision: number; generation: number;
   sessionId?: number; transcriptPassageId?: number; appliedPassageId?: number;
+  speechStartedAtEpochUs?: number | null; speechEndedAtEpochUs?: number | null;
+  appliedSpeechStartedAtEpochUs?: number | null; appliedSpeechEndedAtEpochUs?: number | null;
   listeningState?: "stopped" | "starting" | "listening";
   voiceActivity?: string;
   draftingIntention?: { purpose: string; form: string; tone: string; context: string } | null;

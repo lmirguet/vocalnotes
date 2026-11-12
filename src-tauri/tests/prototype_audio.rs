@@ -39,6 +39,71 @@ fn mono_16k_is_not_resampled_and_silence_never_stops_session() {
 }
 
 #[test]
+fn capture_epoch_timestamp_survives_normalization_and_uses_audio_sample_clock() {
+    let mut native = AudioProcessor::new(16_000, 1).unwrap();
+    let frames = native
+        .push_interleaved_timed(&vec![0.0; 480 * 3], Some(1_000_000))
+        .unwrap();
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| frame.capture_start_epoch_us)
+            .collect::<Vec<_>>(),
+        vec![Some(1_000_000), Some(1_030_000), Some(1_060_000)]
+    );
+
+    let mut resampled = AudioProcessor::new(48_000, 2).unwrap();
+    let frames = resampled
+        .push_interleaved_timed(&vec![0.0; 48_000 / 10 * 2], Some(2_000_000))
+        .unwrap();
+    assert_eq!(frames.len(), 3);
+    assert_eq!(frames[0].capture_start_epoch_us, Some(2_000_000));
+    assert_eq!(frames[1].capture_start_epoch_us, Some(2_030_000));
+    assert_eq!(frames[2].capture_start_epoch_us, Some(2_060_000));
+    let untimed = resampled.push_interleaved(&vec![0.0; 480]).unwrap();
+    assert!(
+        untimed
+            .iter()
+            .all(|frame| frame.capture_start_epoch_us.is_none())
+    );
+}
+
+#[test]
+fn capture_timing_stays_unavailable_after_missing_or_discontinuous_clock_data() {
+    let mut missing = AudioProcessor::new(16_000, 1).unwrap();
+    assert!(
+        missing
+            .push_interleaved(&vec![0.0; 480])
+            .unwrap()
+            .iter()
+            .all(|frame| frame.capture_start_epoch_us.is_none())
+    );
+    assert!(
+        missing
+            .push_interleaved_timed(&vec![0.0; 480], Some(1_000_000))
+            .unwrap()
+            .iter()
+            .all(|frame| frame.capture_start_epoch_us.is_none())
+    );
+
+    let mut discontinuous = AudioProcessor::new(16_000, 1).unwrap();
+    assert_eq!(
+        discontinuous
+            .push_interleaved_timed(&vec![0.0; 480], Some(1_000_000))
+            .unwrap()[0]
+            .capture_start_epoch_us,
+        Some(1_000_000)
+    );
+    assert!(
+        discontinuous
+            .push_interleaved_timed(&vec![0.0; 480], Some(2_000_000))
+            .unwrap()
+            .iter()
+            .all(|frame| frame.capture_start_epoch_us.is_none())
+    );
+}
+
+#[test]
 fn bad_format_and_unbounded_input_fail_explicitly() {
     assert!(AudioProcessor::new(0, 0).is_err());
     let mut audio = AudioProcessor::new(16_000, 2).unwrap();

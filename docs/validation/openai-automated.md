@@ -1,20 +1,25 @@
 # Validation automatisée — migration OpenAI
 
-## Préparation T001 — 2026-11-11
+## Reprise T042/T043 — 2026-11-12
 
-État : T001 à T041 terminées ; T042 partielle et T043 à T046 ouvertes.
-Les commandes automatisées finales passent, mais les mesures de bout en bout
-et recettes natives restent obligatoires. Le blocage initial Rust a été levé
-par installation locale autorisée. Ce rapport n'est pas une recette produit.
+État : T001 à T041 terminées ; T042 est partielle et T043 reste ouverte comme
+prérequis T042. La corrélation capture → VAD → snapshot → occasion de peinture
+est automatisée et testée, et toutes les commandes du gate T043 réussissent.
+Les frontières VAD sont des estimations de trames de 30 ms, pas des repères
+acoustiques calibrés ; SC-002 et les recettes natives restent non validés.
+La tentative réelle sur WSLg a été arrêtée par le garde-fou « Surveillance
+GNOME perdue » avant l'ouverture du microphone par l'application ; zéro audio
+n'a été transmis et aucun appel fournisseur n'a été fait. La capture externe
+audio/visuelle préparatoire a été arrêtée et supprimée sans analyse ni phrase de
+test. Ce rapport n'est pas une recette produit.
 
 ### Versions et configuration
 
 - Node exécuté : 22.23.2, conforme à `>=22.23.2 <23`.
 - npm exécuté : 12.2.1.
-- Rust déclaré : 1.99.1, édition 2024, composant rustfmt.
-- Cargo et Rustup : absents du PATH ; aucune installation trouvée dans les
-  emplacements locaux vérifiés (`~/.cargo/bin`, `~/.rustup/toolchains`,
-  `/usr/bin/cargo`, `/usr/local/bin/cargo`, `/opt/rust/bin/cargo`).
+- Rust/Cargo exécutés : 1.99.1, édition 2024, composant rustfmt.
+- Cargo est installé dans `~/.cargo/bin`, absent du `PATH` de cette session ;
+  les commandes Rust ont été exécutées avec le chemin explicite.
 - Dépendances JavaScript déjà disponibles ; aucune installation nécessaire.
 - Dépôt privé non publié ; aucune configuration Docker, ESLint, Prettier,
   Terraform ou Helm à la racine. Le fichier `.gitignore` existant couvre les
@@ -140,9 +145,11 @@ leurs scripts ; les réexports historiques ne réactivent pas les transports.
 alternance, éléments critiques, catégories et seuils exacts. Cela ne mesure
 aucun taux d'erreur ni aucune fidélité sémantique du service réel.
 
-Les événements `vocalnotes-render` ne contiennent que type, identifiants
-numériques et timestamp. Tests RAF : déduplication, invalidation et annulation.
-Deux RAF ne prouvent ni visibilité physique ni début/fin réels de parole.
+Les événements `vocalnotes-render` contiennent le type, les identifiants de
+corrélation, les horodatages numériques, les délais calculés et un indicateur
+de validité ; ils ne contiennent ni audio ni transcription. Tests RAF :
+déduplication, délais, horloge invalide, invalidation et annulation. Deux RAF
+ne prouvent ni visibilité physique ni début/fin réels de parole.
 **T042 reste partielle** : référence externe synchronisée et calibration non
 réalisées. Ni les durées fournisseur ni les occasions de peinture ne valident
 SC-002. Voir la procédure dans le guide OpenAI.
@@ -151,17 +158,15 @@ SC-002. Voir la procédure dans le guide OpenAI.
 
 | Contrôle | Résultat |
 |---|---|
-| `npm test` | PASS : 12 fichiers, 63 tests |
+| `npm test` | PASS : 12 fichiers, 64 tests |
 | `npm run build` | PASS : type-check et build de production |
-| `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | PASS après formatage |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS : 189 tests, plus un sous-processus de test trousseau indisponible |
-| `cargo test --manifest-path src-tauri/Cargo.toml --example offline_contract_tests` | PASS : 171 tests, plus un sous-processus de test trousseau indisponible |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` | PASS |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS : 193 tests, 0 échec ; 13 tests opt-in filtrés |
 | `cargo check --manifest-path src-tauri/Cargo.toml --examples` | PASS |
 | `git diff --check` | PASS |
 
-Le harness rejoue une partie des mêmes tests ; ne pas additionner ses 171 cas
-aux 189 comme s'il s'agissait de couvertures indépendantes. Les tests opt-in
-retournent sans exercer les périphériques natifs lorsque l'opt-in est absent.
+Le résultat est 193 tests exécutés et réussis, avec 13 tests opt-in filtrés ;
+aucun n'a ouvert de microphone ni contacté le fournisseur.
 
 Pas de nouvelle dépendance, pas de requête fournisseur, pas de capture microphone,
 pas de lecture du fichier de clé réel. Coût fournisseur de cette implémentation :
@@ -170,7 +175,11 @@ planification est épuisé. Aucun commit n'a été créé.
 
 ### Décision
 
-Les contrats et régressions automatisés ne constituent pas une livraison validée.
-T042/T043 restent ouvertes tant que les mesures de bout en bout ne sont pas
-complètes, même si les commandes passent. T044/T045 exigent nouvel accord et
-deux environnements réels. Aucun seuil ni modèle n'a été changé pour conclure.
+L'implémentation et les tests automatisés de corrélation sont achevés, mais
+T042/T043 restent ouvertes : aucune référence externe synchronisée n'a validé
+les vrais débuts/fins acoustiques ni le rendu visible, prérequis T042. Les
+occasions de peinture ne prouvent pas la visibilité physique ; SC-002 reste non
+validé. L'environnement WSLg ne fournit pas la surveillance GNOME requise ;
+reprendre T042 dans une vraie session GNOME/Wayland. T044/T045 exigent nouvel
+accord et deux environnements réels. Aucun seuil ni modèle n'a été changé pour
+conclure.

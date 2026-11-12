@@ -9,7 +9,7 @@ use std::{
         mpsc::{self, Receiver, SyncSender},
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 // 0 stopped, 1 running, 2 device error, 3 saturation, 4 normalization error.
@@ -34,17 +34,45 @@ impl CaptureControl {
     }
 }
 
+struct CaptureMarker {
+    sample_count: usize,
+    consumed: usize,
+    capture_at_epoch_us: Option<u64>,
+}
+
+fn capture_epoch_us_from_callback(callback_epoch_us: u64, capture_age: Duration) -> Option<u64> {
+    let age_us = u64::try_from(capture_age.as_micros()).ok()?;
+    callback_epoch_us.checked_sub(age_us)
+}
+
+fn current_epoch_us() -> Option<u64> {
+    u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_micros(),
+    )
+    .ok()
+}
+
+fn capture_timestamp(info: &cpal::InputCallbackInfo) -> Option<u64> {
+    let timestamp = info.timestamp();
+    let capture_age = timestamp.callback.duration_since(&timestamp.capture)?;
+    capture_epoch_us_from_callback(current_epoch_us()?, capture_age)
+}
+
 fn push_samples<T>(
     producer: &mut Producer<f32>,
     status: &AtomicU8,
     stop: &AtomicBool,
     samples: &[T],
-) where
+) -> bool
+where
     T: cpal::SizedSample,
     f32: cpal::FromSample<T>,
 {
     if stop.load(Ordering::Acquire) || status.load(Ordering::Acquire) != 1 {
-        return;
+        return false;
     }
     for &sample in samples {
         if producer
@@ -52,15 +80,17 @@ fn push_samples<T>(
             .is_err()
         {
             status.store(3, Ordering::Release);
-            return;
+            return false;
         }
     }
+    true
 }
 
 fn stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     mut producer: Producer<f32>,
+    mut markers: Producer<CaptureMarker>,
     status: Arc<AtomicU8>,
     stop: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, &'static str>
@@ -72,9 +102,23 @@ where
     device
         .build_input_stream(
             config,
-            move |samples: &[T], _| {
+            move |samples: &[T], info| {
                 // No allocation, downmix, resampling, locks, network, logging or disk here.
-                push_samples(&mut producer, &callback_status, &stop, samples);
+                if samples.is_empty()
+                    || !push_samples(&mut producer, &callback_status, &stop, samples)
+                {
+                    return;
+                }
+                if markers
+                    .push(CaptureMarker {
+                        sample_count: samples.len(),
+                        consumed: 0,
+                        capture_at_epoch_us: capture_timestamp(&info),
+                    })
+                    .is_err()
+                {
+                    callback_status.store(3, Ordering::Release);
+                }
             },
             move |_| {
                 status.store(2, Ordering::Release);
@@ -186,16 +230,32 @@ fn run(
     });
     let mut processor = AudioProcessor::new(rate, channels)?;
     let (producer, mut consumer) = RingBuffer::<f32>::new(rate * channels * 2);
+    let (marker_producer, mut marker_consumer) = RingBuffer::<CaptureMarker>::new(1024);
     let capture = match supported.sample_format() {
-        cpal::SampleFormat::F32 => {
-            stream::<f32>(&device, &config, producer, status.clone(), stop.clone())?
-        }
-        cpal::SampleFormat::I16 => {
-            stream::<i16>(&device, &config, producer, status.clone(), stop.clone())?
-        }
-        cpal::SampleFormat::U16 => {
-            stream::<u16>(&device, &config, producer, status.clone(), stop.clone())?
-        }
+        cpal::SampleFormat::F32 => stream::<f32>(
+            &device,
+            &config,
+            producer,
+            marker_producer,
+            status.clone(),
+            stop.clone(),
+        )?,
+        cpal::SampleFormat::I16 => stream::<i16>(
+            &device,
+            &config,
+            producer,
+            marker_producer,
+            status.clone(),
+            stop.clone(),
+        )?,
+        cpal::SampleFormat::U16 => stream::<u16>(
+            &device,
+            &config,
+            producer,
+            marker_producer,
+            status.clone(),
+            stop.clone(),
+        )?,
         _ => return Err("Format du microphone non pris en charge ; aucune capture."),
     };
     if stop.load(Ordering::Acquire) {
@@ -207,18 +267,40 @@ fn run(
     ready.send(Ok(())).map_err(|_| "Capture annulée.")?;
     let chunk = rate / 100 * channels;
     let mut scratch = Vec::with_capacity(chunk);
+    let mut scratch_capture_at_epoch_us = None;
+    let mut current_marker: Option<CaptureMarker> = None;
     let mut meter = AudioMeter::default();
     let mut reported = Instant::now();
     while !stop.load(Ordering::Acquire) && status.load(Ordering::Acquire) == 1 {
         while scratch.len() < chunk {
+            if current_marker
+                .as_ref()
+                .is_none_or(|marker| marker.consumed == marker.sample_count)
+            {
+                current_marker = marker_consumer.pop().ok();
+            }
+            let Some(marker) = current_marker.as_mut() else {
+                break;
+            };
             match consumer.pop() {
-                Ok(sample) => scratch.push(sample),
+                Ok(sample) => {
+                    if scratch.is_empty() {
+                        scratch_capture_at_epoch_us = marker.capture_at_epoch_us.map(|start| {
+                            start.saturating_add(
+                                (marker.consumed as u64 / channels as u64 * 1_000_000)
+                                    / rate as u64,
+                            )
+                        });
+                    }
+                    marker.consumed += 1;
+                    scratch.push(sample);
+                }
                 Err(_) => break,
             }
         }
         if scratch.len() == chunk {
             meter.observe(&scratch);
-            match processor.push_interleaved(&scratch) {
+            match processor.push_interleaved_timed(&scratch, scratch_capture_at_epoch_us) {
                 Ok(packets) => {
                     for packet in packets {
                         meter.frame(&packet);
@@ -231,6 +313,7 @@ fn run(
                 Err(_) => status.store(4, Ordering::Release),
             }
             scratch.clear();
+            scratch_capture_at_epoch_us = None;
         } else {
             thread::sleep(Duration::from_millis(2));
         }
@@ -266,15 +349,32 @@ fn run(
 mod ingress_tests {
     use super::*;
     #[test]
+    fn capture_clock_mapping_subtracts_callback_age_and_rejects_underflow() {
+        assert_eq!(
+            capture_epoch_us_from_callback(10_000_000, Duration::from_micros(1_250)),
+            Some(9_998_750)
+        );
+        assert_eq!(
+            capture_epoch_us_from_callback(1_000, Duration::from_micros(1_250)),
+            None
+        );
+    }
+
+    #[test]
     fn saturated_callback_is_terminal_and_never_overwrites_queued_samples() {
         let (mut producer, mut consumer) = RingBuffer::<f32>::new(2);
         let status = AtomicU8::new(1);
         let stop = AtomicBool::new(false);
-        push_samples(&mut producer, &status, &stop, &[0.1f32, 0.2, 0.3]);
+        assert!(!push_samples(
+            &mut producer,
+            &status,
+            &stop,
+            &[0.1f32, 0.2, 0.3]
+        ));
         assert_eq!(status.load(Ordering::Acquire), 3);
         assert_eq!(consumer.pop().unwrap(), 0.1);
         assert_eq!(consumer.pop().unwrap(), 0.2);
-        push_samples(&mut producer, &status, &stop, &[0.4f32]);
+        assert!(!push_samples(&mut producer, &status, &stop, &[0.4f32]));
         assert!(consumer.pop().is_err());
     }
     #[test]
@@ -282,7 +382,7 @@ mod ingress_tests {
         let (mut producer, mut consumer) = RingBuffer::<f32>::new(2);
         let status = AtomicU8::new(1);
         let stop = AtomicBool::new(true);
-        push_samples(&mut producer, &status, &stop, &[0.1f32]);
+        assert!(!push_samples(&mut producer, &status, &stop, &[0.1f32]));
         assert!(consumer.pop().is_err());
     }
 }

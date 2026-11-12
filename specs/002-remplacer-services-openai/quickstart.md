@@ -136,12 +136,24 @@ de protocole, qui n'avait ni microphone ni interface native.
 #### Corrélation de rendu et référence de parole
 
 L'interface émet `vocalnotes-render` après deux `requestAnimationFrame`, avec
-uniquement `type` (`transcript-partial` ou `note-commit`), `noteId`, `sessionId`,
-`generation`, `passageId` et `renderedAt` (millisecondes,
-`performance.timeOrigin + performance.now()`). Ces métadonnées ne sont ni
-journalisées ni persistées par l'application. Le premier provisoire et le commit
-sont dédupliqués par passage ; les callbacks périmés sont annulés. Le snapshot
-expose `transcriptPassageId` et `appliedPassageId` pour la corrélation.
+uniquement `type` (`transcript-partial` ou `note-commit`), les identifiants
+`noteId`, `sessionId`, `generation`, `passageId`, les repères numériques
+`speechStartedAtEpochUs` / `speechEndedAtEpochUs`, les délais
+`speechToRenderMs` / `speechEndToRenderMs`, `timingValid` et `renderedAt`
+(millisecondes, `performance.timeOrigin + performance.now()`). Ces métadonnées
+ne sont ni journalisées ni persistées par l'application. Repères manquants,
+horloges incohérentes et délais négatifs sont signalés sans délai exploitable.
+Le premier provisoire et le commit sont dédupliqués par passage ; les callbacks
+périmés sont annulés. Le snapshot expose les identifiants de passage appliqué
+pour la corrélation.
+
+Les repères côté application sont des **estimations aux frontières des trames
+VAD de 30 ms**, pas des mesures acoustiques de début/fin réels : le début est
+placé au début de la trame de 30 ms précédant la première trame vocale et la fin
+au début de la dernière trame vocale. La conversion suit les échantillons
+capturés à travers downmix et rééchantillonnage ; une horloge CPAL initialement
+absente ou un saut de plus de 250 ms invalide les horodatages. Cela ne remplace
+pas la référence externe synchronisée décrite ci-dessous et ne valide pas SC-002.
 
 Il s'agit d'une **occasion de peinture**, pas d'une preuve de pixels effectivement
 visibles : les fenêtres masquées sont exclues mais une zone hors viewport ou
@@ -157,10 +169,10 @@ externe éventuelle du seul corpus fictif exige une autorisation distincte ; ell
 ne devient pas un enregistrement de l'application. Avec une incertitude, retenir
 la borne haute du délai pour comparer aux seuils inchangés.
 
-Ne pas remplacer ces repères par le début VAD, le commit (qui inclut déjà le
-silence), `lastSttFinalMs` ou `lastLlmMs`. Les tests hors ligne vérifient les
-identifiants, annulations et occasions de peinture, **pas** la référence audio
-ni SC-002. L'instrumentation bout en bout T042 reste partielle jusqu'à cette
+Ne pas remplacer les repères externes par le début VAD estimé, le commit (qui
+inclut déjà le silence), `lastSttFinalMs` ou `lastLlmMs`. Les tests hors ligne
+vérifient la corrélation, les délais calculés et les occasions de peinture,
+**pas** la référence audio ni SC-002. T042 reste partielle jusqu'à cette
 calibration et à la vérification des vrais repères.
 
 ### Rédaction — SC-003

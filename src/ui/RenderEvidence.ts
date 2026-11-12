@@ -6,6 +6,11 @@ export type RenderEvidence = {
   sessionId: number;
   generation: number;
   passageId: number;
+  speechStartedAtEpochUs: number | null;
+  speechEndedAtEpochUs: number | null;
+  speechToRenderMs: number | null;
+  speechEndToRenderMs: number | null;
+  timingValid: boolean;
   renderedAt: number;
 };
 
@@ -43,6 +48,12 @@ export function createRenderEvidence(target: HTMLElement, type: RenderEvidence["
       const id = passageId!;
       if (id < latestPassage) return;
       cancel(); latestPassage = id;
+      const speechStartedAtEpochUs = type === "transcript-partial"
+        ? snapshot.speechStartedAtEpochUs
+        : snapshot.appliedSpeechStartedAtEpochUs;
+      const speechEndedAtEpochUs = type === "note-commit"
+        ? snapshot.appliedSpeechEndedAtEpochUs
+        : undefined;
       const identifiers = { noteId: snapshot.noteId, sessionId: snapshot.sessionId!,
         generation: snapshot.generation, passageId: id };
       pending.set(id, window.requestAnimationFrame(() => {
@@ -55,9 +66,38 @@ export function createRenderEvidence(target: HTMLElement, type: RenderEvidence["
             if (style.display === "none" || style.visibility === "hidden") return;
           }
           emitted.add(id);
+          const renderedAt = performance.timeOrigin + performance.now();
+          const startedEpochUs = Number.isSafeInteger(speechStartedAtEpochUs)
+            ? speechStartedAtEpochUs! : null;
+          const endedEpochUs = Number.isSafeInteger(speechEndedAtEpochUs)
+            ? speechEndedAtEpochUs! : null;
+          const startedAt = startedEpochUs === null ? null : startedEpochUs / 1000;
+          const endedAt = endedEpochUs === null ? null : endedEpochUs / 1000;
+          const elapsed = (origin: number | null) => {
+            if (origin === null) return null;
+            const duration = renderedAt - origin;
+            return Number.isFinite(duration) && duration >= 0 ? duration : null;
+          };
+          const startedToRenderMs = elapsed(startedAt);
+          const endedToRenderMs = elapsed(endedAt);
+          const timingValid = startedToRenderMs !== null &&
+            (type === "transcript-partial" ||
+              (endedAt !== null && startedAt !== null && endedAt >= startedAt &&
+                endedToRenderMs !== null));
+          const speechToRenderMs = timingValid ? startedToRenderMs : null;
+          const speechEndToRenderMs = timingValid ? endedToRenderMs : null;
           target.dispatchEvent(new CustomEvent<RenderEvidence>("vocalnotes-render", {
             bubbles: true,
-            detail: { type, ...identifiers, renderedAt: performance.timeOrigin + performance.now() },
+            detail: {
+              type,
+              ...identifiers,
+              speechStartedAtEpochUs: startedEpochUs,
+              speechEndedAtEpochUs: endedEpochUs,
+              speechToRenderMs,
+              speechEndToRenderMs,
+              timingValid,
+              renderedAt,
+            },
           }));
         }));
       }));

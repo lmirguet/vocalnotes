@@ -10,6 +10,7 @@ fn frame(n: u8, voiced: bool, end: bool) -> AudioFrame {
         pcm: vec![n; 960],
         voiced,
         end_passage: end,
+        capture_start_epoch_us: Some(u64::from(n) * 30_000),
     }
 }
 
@@ -23,7 +24,13 @@ fn silence_never_ends_session_and_preroll_is_bounded() {
         ));
     }
     match gate.push(frame(1, true, false)).unwrap() {
-        PassageStep::Start(pcm) => assert_eq!(pcm.len(), 11 * 960),
+        PassageStep::Start {
+            pcm,
+            speech_started_at_epoch_us,
+        } => {
+            assert_eq!(pcm.len(), 11 * 960);
+            assert_eq!(speech_started_at_epoch_us, Some(0));
+        }
         _ => panic!("missing start"),
     }
 }
@@ -33,14 +40,20 @@ fn rotation_keeps_boundary_frames_exactly_once() {
     let mut gate = PassageGate::default();
     assert!(matches!(
         gate.push(frame(1, true, false)).unwrap(),
-        PassageStep::Start(_)
+        PassageStep::Start { .. }
     ));
     match gate.push(frame(2, false, true)).unwrap() {
-        PassageStep::End(pcm) => assert_eq!(pcm, vec![2; 960]),
+        PassageStep::End {
+            pcm,
+            speech_ended_at_epoch_us,
+        } => {
+            assert_eq!(pcm, vec![2; 960]);
+            assert_eq!(speech_ended_at_epoch_us, Some(30_000));
+        }
         _ => panic!("missing end"),
     }
     match gate.push(frame(3, true, false)).unwrap() {
-        PassageStep::Start(pcm) => assert_eq!(pcm, vec![3; 960]),
+        PassageStep::Start { pcm, .. } => assert_eq!(pcm, vec![3; 960]),
         _ => panic!("next passage lost"),
     }
 }

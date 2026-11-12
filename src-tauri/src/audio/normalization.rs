@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use webrtc_vad::{SampleRate, Vad, VadMode};
 
 const OUTPUT_RATE: usize = 16_000;
+const MAX_CAPTURE_CLOCK_ADJUSTMENT_NS: u64 = 250_000_000;
 const FRAME: usize = 480; // WebRTC-valid 30 ms, engineering parameter, not a measured SLA.
 const SILENCE_FRAMES: usize = 27; // 810ms, to calibrate on the two target desktops.
 const MAX_PASSAGE_FRAMES: usize = 2000; // 60s bound: explicit failure, never silent truncation.
@@ -76,6 +77,7 @@ mod meter_tests {
             pcm: i16::MIN.to_le_bytes().to_vec(),
             voiced: true,
             end_passage: false,
+            capture_start_epoch_us: None,
         });
         assert_eq!(stereo.pcm_peak, 32768);
         assert_eq!(stereo.voiced, 1);
@@ -86,15 +88,20 @@ pub struct AudioFrame {
     pub pcm: Vec<u8>,
     pub voiced: bool,
     pub end_passage: bool,
+    pub capture_start_epoch_us: Option<u64>,
 }
 
 pub struct AudioProcessor {
     rate: usize,
     channels: usize,
-    input: VecDeque<f32>,
-    output: VecDeque<i16>,
+    input: VecDeque<(f32, Option<u64>)>,
+    output: VecDeque<(i16, Option<u64>)>,
     resampler: Option<FftFixedIn<f32>>,
     delay: usize,
+    filter_delay: usize,
+    capture_clock_initialized: bool,
+    capture_clock_valid: bool,
+    next_output_capture_time_ns: Option<u64>,
     vad: Vad,
     active: bool,
     silence: usize,
@@ -115,6 +122,7 @@ impl AudioProcessor {
             )
         };
         let delay = resampler.as_ref().map_or(0, |r| r.output_delay());
+        let filter_delay = delay;
         Ok(Self {
             rate,
             channels,
@@ -122,6 +130,10 @@ impl AudioProcessor {
             output: VecDeque::new(),
             resampler,
             delay,
+            filter_delay,
+            capture_clock_initialized: false,
+            capture_clock_valid: true,
+            next_output_capture_time_ns: None,
             vad: Vad::new_with_rate_and_mode(SampleRate::Rate16kHz, VadMode::Quality),
             active: false,
             silence: 0,
@@ -129,27 +141,69 @@ impl AudioProcessor {
         })
     }
 
-    fn normalized(&mut self, mono: &[f32]) {
+    fn normalized(&mut self, mono: &[f32], capture_start_epoch_us: Option<u64>) {
+        if mono.is_empty() {
+            return;
+        }
+        if !self.capture_clock_initialized {
+            self.capture_clock_initialized = true;
+            self.next_output_capture_time_ns =
+                capture_start_epoch_us.map(|time| time.saturating_mul(1000));
+            self.capture_clock_valid = self.next_output_capture_time_ns.is_some();
+        } else if self.delay == 0
+            && self.capture_clock_valid
+            && let (Some(expected), Some(capture_start)) =
+                (self.next_output_capture_time_ns, capture_start_epoch_us)
+        {
+            let delay_ns = self.filter_delay as u64 * 1_000_000_000 / OUTPUT_RATE as u64;
+            let observed = capture_start.saturating_mul(1000).saturating_sub(delay_ns);
+            if expected.abs_diff(observed) > MAX_CAPTURE_CLOCK_ADJUSTMENT_NS {
+                self.capture_clock_valid = false;
+                self.next_output_capture_time_ns = None;
+            } else {
+                self.next_output_capture_time_ns = Some(observed);
+            }
+        }
         for &sample in mono {
             if self.delay > 0 {
                 self.delay -= 1;
                 continue;
             }
-            self.output
-                .push_back((sample.clamp(-1.0, 1.0) * 32767.0).round() as i16);
+            let capture_time = self
+                .capture_clock_valid
+                .then_some(self.next_output_capture_time_ns)
+                .flatten()
+                .map(|time| time / 1000);
+            self.output.push_back((
+                (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16,
+                capture_time,
+            ));
+            self.next_output_capture_time_ns = self
+                .next_output_capture_time_ns
+                .map(|time| time.saturating_add(1_000_000_000 / OUTPUT_RATE as u64));
         }
     }
 
     pub fn push_interleaved(&mut self, samples: &[f32]) -> Result<Vec<AudioFrame>, &'static str> {
+        self.push_interleaved_timed(samples, None)
+    }
+
+    pub fn push_interleaved_timed(
+        &mut self,
+        samples: &[f32],
+        capture_start_epoch_us: Option<u64>,
+    ) -> Result<Vec<AudioFrame>, &'static str> {
         if samples.len() % self.channels != 0
             || samples.len() > self.rate * self.channels / 4
             || samples.iter().any(|s| !s.is_finite())
         {
             return Err("Entrée audio invalide ou trop volumineuse ; capture à arrêter.");
         }
-        for frame in samples.chunks_exact(self.channels) {
+        for (index, frame) in samples.chunks_exact(self.channels).enumerate() {
+            let timestamp = capture_start_epoch_us
+                .map(|start| start.saturating_add((index as u64 * 1_000_000) / self.rate as u64));
             self.input
-                .push_back(frame.iter().sum::<f32>() / self.channels as f32);
+                .push_back((frame.iter().sum::<f32>() / self.channels as f32, timestamp));
         }
         if self.resampler.is_some() {
             loop {
@@ -157,25 +211,31 @@ impl AudioProcessor {
                 if self.input.len() < needed {
                     break;
                 }
-                let mono: Vec<f32> = self.input.drain(..needed).collect();
+                let batch: Vec<_> = self.input.drain(..needed).collect();
+                let capture_start = batch.first().and_then(|(_, timestamp)| *timestamp);
+                let mono: Vec<f32> = batch.into_iter().map(|(sample, _)| sample).collect();
                 let converted = self
                     .resampler
                     .as_mut()
                     .unwrap()
                     .process(&[mono], None)
                     .map_err(|_| "Normalisation audio échouée ; passage non intégré.")?;
-                self.normalized(&converted[0]);
+                self.normalized(&converted[0], capture_start);
             }
         } else {
-            let mono: Vec<f32> = self.input.drain(..).collect();
-            self.normalized(&mono);
+            let batch: Vec<_> = self.input.drain(..).collect();
+            let capture_start = batch.first().and_then(|(_, timestamp)| *timestamp);
+            let mono: Vec<f32> = batch.into_iter().map(|(sample, _)| sample).collect();
+            self.normalized(&mono, capture_start);
         }
         let mut frames = Vec::new();
         while self.output.len() >= FRAME {
-            let samples: Vec<i16> = self.output.drain(..FRAME).collect();
+            let samples: Vec<_> = self.output.drain(..FRAME).collect();
+            let capture_start_epoch_us = samples.first().and_then(|(_, timestamp)| *timestamp);
+            let pcm_samples: Vec<i16> = samples.into_iter().map(|(sample, _)| sample).collect();
             let voiced = self
                 .vad
-                .is_voice_segment(&samples)
+                .is_voice_segment(&pcm_samples)
                 .map_err(|_| "VAD local indisponible.")?;
             if voiced {
                 self.active = true;
@@ -196,9 +256,10 @@ impl AudioProcessor {
                 self.passage = 0;
             }
             frames.push(AudioFrame {
-                pcm: samples.iter().flat_map(|s| s.to_le_bytes()).collect(),
+                pcm: pcm_samples.iter().flat_map(|s| s.to_le_bytes()).collect(),
                 voiced,
                 end_passage,
+                capture_start_epoch_us,
             });
         }
         Ok(frames)

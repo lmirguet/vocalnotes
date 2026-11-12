@@ -39,15 +39,17 @@ sans réinitialiser ce dépôt ni installer de nouvelle dépendance par anticipa
 **Checkpoint** : base de comparaison et inventaire disponibles ; les obstacles
 d'environnement sont explicites, pas convertis en succès.
 
-**Exécution du 2026-11-11** : T001 à T041 terminées (41/46). Après accord,
-installation locale de Rustup/Rust 1.99.1. Contrôles finaux : 63 tests UI,
-189 tests Rust, harness hors ligne de 171 tests (recouvrement de la suite),
-build, formatage et compilation des exemples réussis. Aucun nouvel appel
-fournisseur ni microphone. T042 partielle : corrélation des occasions de peinture
-testée, pas de vrais repères parole/rendu calibrés. T043 reste ouverte malgré
-ses commandes passantes, car son prérequis T042 est incomplet. T044/T045 non
-exécutées, nouvel accord et plateformes réelles requis ; T046 préparée mais
-non finalisée avant ces recettes. Aucun GO livraison.
+**Exécution du 2026-11-12** : T001 à T041 terminées (41/46). T042 est
+instrumentée et testée côté logiciel, mais reste ouverte faute de référence
+synchronisée des vrais débuts/fins de parole et du rendu visible ; les frontières
+VAD sont des estimations à 30 ms. Toutes les commandes de T043 ont réussi :
+64 tests UI, 193 tests Rust, build, formatage et compilation des exemples.
+Son statut reste ouvert tant que son prérequis T042 n'est pas satisfait.
+Tentative réelle bloquée par le garde-fou GNOME sous WSLg avant l'ouverture du
+micro par l'application ; aucun audio transmis ni appel fournisseur. SC-002
+reste non validé. T044/T045
+nécessitent un nouvel accord et des recettes sur plateformes réelles ; T046
+reste ouverte jusqu'à ces résultats. Aucun GO livraison.
 Voir `docs/validation/openai-automated.md` et `docs/validation/openai-summary.md`.
 
 ## Phase 2: Foundational — prérequis communs bloquants
@@ -178,8 +180,8 @@ ni réécrites comme succès OpenAI ni supprimées.
 - [X] T039 Adapter les exemples et outils actifs `src-tauri/examples/probe_stt_transport.rs`, `src-tauri/examples/offline_contract_tests.rs`, `src-tauri/examples/validate_gnome.rs`, `tooling/windows-stt-check.ps1`, `tooling/windows-native.ps1` et `tooling/validate-gnome-bus-loss.py` aux contrats/modèles retenus sans import automatique de clé ni appel payant implicite ; vérifier les exports de `src-tauri/src/platform/mistral.rs`, `src-tauri/src/platform/mod.rs`, `src-tauri/src/adapters/mod.rs` et les tests liés pour qu'aucun chemin actif n'appelle Mistral, sans nettoyage historique inutile.
 - [X] T040 [P] Mettre à jour la documentation d'utilisation dans `specs/001-bloc-notes-vocal/quickstart.md`, le guide `specs/002-remplacer-services-openai/quickstart.md` et `tests/fixtures/README.md` : défauts OpenAI, trousseau, consentement, absence de garantie de conservation liée à `store:false`, recettes natives et séparation entre preuves Mistral historiques et nouvelle validation.
 - [X] T041 [P] Fixer avant les essais dans le nouveau `tests/fixtures/openai-fidelity.json` les 20 passages alternés (10 français/10 anglais, noms/nombres/négations critiques), 12 demandes de rédaction (6/langue couvrant rédaction/correction/intention/ambiguïté), dix interruptions et attentes explicites ; inclure les règles de tokenisation/normalisation du taux d'erreur sans supprimer les éléments critiques, sans enregistrer de données personnelles.
-- [ ] T042 Instrumenter et tester les mesures de bout en bout dans `src-tauri/src/platform/controller.rs`, `src/ui/TranscriptView.ts`, `src/ui/NoteView.ts`, `src/ui/contracts.ts` et les tests UI concernés : début/fin réels de parole, premier texte effectivement rendu et rendu de note validé avec horloge/corrélation adaptées ; inclure normalisation, réseau, VAD et rendu sans stocker audio/transcription, distinguer ces délais des seules latences fournisseur.
-- [ ] T043 Exécuter la suite complète sans réseau fournisseur `npm test`, `npm run build`, `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` et `cargo test --manifest-path src-tauri/Cargo.toml` après intégration ; vérifier fixtures et instrumentation dans leurs tests, consigner résultats/dépendances/toolchain/blocages dans `docs/validation/openai-automated.md` et ne pas déclarer la tâche achevée sur une simple absence de Cargo.
+- [ ] T042 Instrumenter et tester les mesures de bout en bout dans `src-tauri/src/platform/controller.rs`, `src/ui/TranscriptView.ts`, `src/ui/NoteView.ts`, `src/ui/DesktopShell.ts`, `src/ui/contracts.ts` et les tests UI concernés : début/fin réels de parole, premier texte effectivement rendu et rendu de note validé avec horloge/corrélation adaptées ; inclure normalisation, réseau, VAD et rendu sans stocker audio/transcription, distinguer ces délais des seules latences fournisseur. La corrélation logicielle est testée, mais pas la référence synchronisée des vrais repères.
+- [ ] T043 Exécuter la suite complète sans réseau fournisseur `npm test`, `npm run build`, `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` et `cargo test --manifest-path src-tauri/Cargo.toml` après intégration ; vérifier fixtures et instrumentation dans leurs tests, consigner résultats/dépendances/toolchain/blocages dans `docs/validation/openai-automated.md` et ne pas déclarer la tâche achevée sur une simple absence de Cargo. Toutes les commandes passent ; statut ouvert car T042, prérequis, n'est pas complet.
 - [ ] T044 [P] Après nouvel accord explicite pour microphone/envois/coûts, exécuter `specs/002-remplacer-services-openai/quickstart.md` sur GNOME/Wayland et publier le nouveau `docs/validation/openai-gnome.md` : WER ≤ 10 % par langue sans contresens critique, premier texte ≤ 2 s pour 18/20, note ≤ 5 s pour 18/20, rédaction 12/12, dix interruptions sans effet tardif, migration/trousseau/stockage/confidentialité et absence de trafic Mistral ; documenter tout blocage comme non validé sans cocher la recette complète.
 - [ ] T045 [P] Après nouvel accord explicite pour microphone/envois/coûts, exécuter la même recette sur Windows 11 et publier le nouveau `docs/validation/openai-windows.md`, avec OS/matériel/réseau/modèles/permissions/trousseau et chaque seuil SC-001 à SC-008 mesuré ; ne pas extrapoler depuis Linux, un type-check, le diagnostic synthétique ou HTTP 101 et conserver toute restriction Zscaler comme blocage explicite.
 - [ ] T046 Consolider dans le nouveau `docs/validation/openai-summary.md` la couverture FR-001 à FR-016 et SC-001 à SC-008, liens vers `docs/validation/openai-automated.md`, `docs/validation/openai-gnome.md` et `docs/validation/openai-windows.md`, résultats chiffrés/coûts connus ou inconnus et risques restants ; mettre à jour le statut réel dans `specs/002-remplacer-services-openai/tasks.md` et ne déclarer la migration livrable qu'après toutes les preuves obligatoires, sans changer modèle ni seuil pour masquer un échec.

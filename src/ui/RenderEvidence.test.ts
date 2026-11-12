@@ -23,7 +23,7 @@ function frames() {
 const base: Snapshot = { noteId:1, sessionId:2, generation:3, manualPeriod:1, revision:0,
   mode:"voice", source:"Note", blocks:[{from:0,to:4,raw:"Note",kind:"paragraph"}],
   dirty:false, message:"", transcriptEnabled:true, transcriptPassageId:1,
-  transcriptProvisional:"Bonjour" };
+  transcriptProvisional:"Bonjour", speechStartedAtEpochUs:1_000_000 };
 
 it("émet le premier partiel visible après deux frames, une fois, sans contenu", () => {
   const frame = frames();
@@ -34,8 +34,11 @@ it("émet le premier partiel visible après deux frames, une fois, sans contenu"
   view.render(base);
   expect(events).toHaveLength(0); frame(); expect(events).toHaveLength(0); frame();
   expect(events).toEqual([{ type:"transcript-partial", noteId:1, sessionId:2, generation:3,
-    passageId:1, renderedAt:expect.any(Number) }]);
+    passageId:1, speechStartedAtEpochUs:1_000_000,
+    speechEndedAtEpochUs:null, speechToRenderMs:expect.any(Number),
+    speechEndToRenderMs:null, timingValid:true, renderedAt:expect.any(Number) }]);
   expect(events[0]!.renderedAt).toBeGreaterThanOrEqual(performance.timeOrigin);
+  expect(events[0]!.speechToRenderMs).toBeCloseTo(events[0]!.renderedAt - 1000, 3);
   view.render({...base, transcriptProvisional:"Bonjour suite"}); frame(); frame();
   expect(events).toHaveLength(1);
   view.destroy();
@@ -72,9 +75,40 @@ it("n'annonce aucun rendu déconnecté ou masqué et annule une génération rem
   evidence.destroy();
 });
 
+it("signale des horodatages invalides sans publier NaN ni délais négatifs", () => {
+  const frame = frames(); const target = document.createElement("div");
+  document.body.append(target);
+  const evidence = createRenderEvidence(target, "note-commit");
+  const events: RenderEvidence[] = [];
+  target.addEventListener("vocalnotes-render", event => events.push((event as CustomEvent<RenderEvidence>).detail));
+  evidence.queue({...base, appliedSpeechStartedAtEpochUs:NaN,
+    appliedSpeechEndedAtEpochUs:Number.MAX_SAFE_INTEGER}, 1, () => true);
+  frame(); frame();
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    speechStartedAtEpochUs:null,
+    speechEndedAtEpochUs:Number.MAX_SAFE_INTEGER,
+    speechToRenderMs:null,
+    speechEndToRenderMs:null,
+    timingValid:false,
+  });
+  evidence.queue({...base, appliedSpeechStartedAtEpochUs:2_000_000,
+    appliedSpeechEndedAtEpochUs:1_000_000}, 2, () => true);
+  frame(); frame();
+  expect(events[1]).toMatchObject({
+    speechStartedAtEpochUs:2_000_000,
+    speechEndedAtEpochUs:1_000_000,
+    speechToRenderMs:null,
+    speechEndToRenderMs:null,
+    timingValid:false,
+  });
+  evidence.destroy();
+});
+
 it("corrèle le rendu de la note validée sans émission après destruction", async () => {
   vi.useFakeTimers(); const frame = frames();
-  let snapshot = {...base, mode:"manual", transcriptEnabled:false, appliedPassageId:1};
+  let snapshot = {...base, mode:"manual", transcriptEnabled:false, appliedPassageId:1,
+    appliedSpeechStartedAtEpochUs:1_000_000, appliedSpeechEndedAtEpochUs:2_000_000};
   const root = document.createElement("main"); document.body.append(root);
   const events: RenderEvidence[] = [];
   root.addEventListener("vocalnotes-render", event => events.push((event as CustomEvent<RenderEvidence>).detail));
@@ -83,7 +117,12 @@ it("corrèle le rendu de la note validée sans émission après destruction", as
     return snapshot;
   });
   expect(events).toHaveLength(0); frame(); expect(events).toHaveLength(0); frame();
-  expect(events).toEqual([{type:"note-commit",noteId:1,sessionId:2,generation:3,passageId:1,renderedAt:expect.any(Number)}]);
+  expect(events).toEqual([{type:"note-commit",noteId:1,sessionId:2,generation:3,passageId:1,
+    speechStartedAtEpochUs:1_000_000, speechEndedAtEpochUs:2_000_000,
+    speechToRenderMs:expect.any(Number), speechEndToRenderMs:expect.any(Number),
+    timingValid:true,
+    renderedAt:expect.any(Number)}]);
+  expect(events[0]!.speechEndToRenderMs).toBeCloseTo(events[0]!.renderedAt - 2000, 3);
   snapshot = {...snapshot, revision:1, appliedPassageId:2, source:"Suite",
     blocks:[{from:0,to:5,raw:"Suite",kind:"paragraph"}]};
   await vi.advanceTimersByTimeAsync(1000);

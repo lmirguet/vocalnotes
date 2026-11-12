@@ -54,6 +54,10 @@ pub struct Snapshot {
     pub preferences_migrated: bool,
     pub transcript_passage_id: u64,
     pub applied_passage_id: u64,
+    pub speech_started_at_epoch_us: Option<u64>,
+    pub speech_ended_at_epoch_us: Option<u64>,
+    pub applied_speech_started_at_epoch_us: Option<u64>,
+    pub applied_speech_ended_at_epoch_us: Option<u64>,
     pub llm_model: String,
     pub last_stt_final_ms: Option<u64>,
     pub last_llm_ms: Option<u64>,
@@ -286,6 +290,10 @@ impl Note {
                 preferences_migrated: false,
                 transcript_passage_id: 0,
                 applied_passage_id: 0,
+                speech_started_at_epoch_us: None,
+                speech_ended_at_epoch_us: None,
+                applied_speech_started_at_epoch_us: None,
+                applied_speech_ended_at_epoch_us: None,
                 llm_model: String::new(),
                 last_stt_final_ms: None,
                 last_llm_ms: None,
@@ -432,6 +440,10 @@ impl Note {
         self.state.stt_acknowledged_model.clear();
         self.state.transcript_passage_id = 0;
         self.state.applied_passage_id = 0;
+        self.state.speech_started_at_epoch_us = None;
+        self.state.speech_ended_at_epoch_us = None;
+        self.state.applied_speech_started_at_epoch_us = None;
+        self.state.applied_speech_ended_at_epoch_us = None;
         if !resume {
             self.state.session_id += 1;
         }
@@ -611,6 +623,30 @@ impl Note {
         }
     }
 
+    pub fn speech_passage_started(&mut self, passage_id: u64, captured_at_epoch_us: Option<u64>) {
+        self.transcript_start_passage();
+        self.state.transcript_passage_id = passage_id;
+        self.state.speech_started_at_epoch_us = captured_at_epoch_us;
+        self.state.speech_ended_at_epoch_us = None;
+    }
+
+    pub fn speech_passage_ended(&mut self, passage_id: u64, captured_at_epoch_us: Option<u64>) {
+        if self.state.transcript_passage_id == passage_id {
+            self.state.speech_ended_at_epoch_us = captured_at_epoch_us;
+        }
+    }
+
+    pub fn speech_passage_applied(
+        &mut self,
+        passage_id: u64,
+        started_at_epoch_us: Option<u64>,
+        ended_at_epoch_us: Option<u64>,
+    ) {
+        self.state.applied_passage_id = passage_id;
+        self.state.applied_speech_started_at_epoch_us = started_at_epoch_us;
+        self.state.applied_speech_ended_at_epoch_us = ended_at_epoch_us;
+    }
+
     pub fn preferences_migrated(&mut self) {
         self.state.preferences_migrated = true;
         self.state.message = "Configuration migrée vers OpenAI ; renseignez la clé OpenAI dans le trousseau si nécessaire.".into();
@@ -640,6 +676,12 @@ impl Note {
         self.intention.clear();
         self.state.change_feedback = None;
         self.state.note_id += 1;
+        self.state.transcript_passage_id = 0;
+        self.state.applied_passage_id = 0;
+        self.state.speech_started_at_epoch_us = None;
+        self.state.speech_ended_at_epoch_us = None;
+        self.state.applied_speech_started_at_epoch_us = None;
+        self.state.applied_speech_ended_at_epoch_us = None;
         self.state.source = source;
         self.state.revision = 0;
         self.state.dirty = false;

@@ -33,6 +33,8 @@ struct Active {
 struct Finalized {
     passage_id: u64,
     text: String,
+    speech_started_at_epoch_us: Option<u64>,
+    speech_ended_at_epoch_us: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -358,6 +360,7 @@ impl Controller {
         let mut gate = PassageGate::default();
         let mut converter = None;
         let mut passage_id = 0;
+        let mut speech_started_at_epoch_us = None;
         loop {
             // Read events continuously while feeding audio; normal LLM work is independent.
             tokio::select! {
@@ -375,11 +378,11 @@ impl Controller {
                     let frame = frame.ok_or("Capture interrompue ; passage non intégré.")?;
                     match gate.push(frame)? {
                         PassageStep::Wait => {}
-                        PassageStep::Start(pcm) => {
+                        PassageStep::Start { pcm, speech_started_at_epoch_us: started_at } => {
                             crate::diagnostics::event("STT : début de passage détecté par VAD");
-                            self.update(ticket, |c| c.transcript_start_passage());
                             passage_id += 1;
-                            self.update(ticket, |c| c.measure("transcript_passage", passage_id, ""));
+                            speech_started_at_epoch_us = started_at;
+                            self.update(ticket, |c| c.speech_passage_started(passage_id, started_at));
                             priority.send_replace(Some(String::new()));
                             self.update(ticket, |c| c.measure("stt", 1, ""));
                             stream.begin_passage()?;
@@ -396,8 +399,9 @@ impl Controller {
                             if !converted.is_empty() { stream.append_pcm(&converted).await?; }
                             self.update(ticket, |c| c.measure("audio", 30, ""));
                         }
-                        PassageStep::End(pcm) => {
+                        PassageStep::End { pcm, speech_ended_at_epoch_us } => {
                             crate::diagnostics::event("STT : fin de passage, attente final OpenAI");
+                            self.update(ticket, |c| c.speech_passage_ended(passage_id, speech_ended_at_epoch_us));
                             let resampler = converter.as_mut().ok_or("Passage audio absent.")?;
                             let converted = resampler.push(&pcm)?;
                             if !converted.is_empty() { stream.append_pcm(&converted).await?; }
@@ -416,7 +420,12 @@ impl Controller {
                                         }
                                         self.update(ticket, |c| c.measure("stt_final_ms", finalize_started.elapsed().as_millis() as u64, ""));
                                         self.update(ticket, |c| c.transcript_done(&text));
-                                        finals.try_send(Finalized { passage_id, text }).map_err(|_| "Saturation interprétation : passages non intégrés, arrêt sans spool.")?;
+                                        finals.try_send(Finalized {
+                                            passage_id,
+                                            text,
+                                            speech_started_at_epoch_us,
+                                            speech_ended_at_epoch_us,
+                                        }).map_err(|_| "Saturation interprétation : passages non intégrés, arrêt sans spool.")?;
                                         break;
                                     }
                                     SttEvent::Provisional(text) => {
@@ -443,7 +452,13 @@ impl Controller {
     ) -> Result<(), &'static str> {
         let interpreter = OpenAiInterpreter::selected(selection)?;
         let mut sequence = 0;
-        while let Some(Finalized { passage_id, text }) = finals.recv().await {
+        while let Some(Finalized {
+            passage_id,
+            text,
+            speech_started_at_epoch_us,
+            speech_ended_at_epoch_us,
+        }) = finals.recv().await
+        {
             if text.trim().is_empty() {
                 crate::diagnostics::event("STT : final vide ignoré, aucun appel LLM ordinaire");
                 continue;
@@ -491,7 +506,11 @@ impl Controller {
                 match reply.commit(&mut core) {
                     Ok(()) => {
                         if core.snapshot().source != before.source {
-                            core.measure("applied_passage", passage_id, "");
+                            core.speech_passage_applied(
+                                passage_id,
+                                speech_started_at_epoch_us,
+                                speech_ended_at_epoch_us,
+                            );
                         }
                         if core.snapshot().message == before.message {
                             core.message("Passage finalisé traité ; écoute continue.");
@@ -723,6 +742,7 @@ mod tests {
                     pcm: vec![0; 960],
                     voiced: true,
                     end_passage: false,
+                    capture_start_epoch_us: Some(1_000_000),
                 })
                 .await
                 .unwrap();
@@ -731,6 +751,7 @@ mod tests {
                     pcm: vec![0; 960],
                     voiced: false,
                     end_passage: true,
+                    capture_start_epoch_us: Some(1_030_000),
                 })
                 .await
                 .unwrap();
@@ -750,7 +771,11 @@ mod tests {
             assert_eq!(final_text.text, "Texte final.");
         }
         assert_eq!(starts.load(Ordering::SeqCst), 2);
-        assert_eq!(c.core.lock().unwrap().snapshot().source, "note originale");
+        let snapshot = c.core.lock().unwrap().snapshot();
+        assert_eq!(snapshot.source, "note originale");
+        assert_eq!(snapshot.transcript_passage_id, 2);
+        assert_eq!(snapshot.speech_started_at_epoch_us, Some(970_000));
+        assert_eq!(snapshot.speech_ended_at_epoch_us, Some(1_000_000));
         handle.abort();
         let _ = handle.await;
     }
@@ -768,6 +793,7 @@ mod tests {
                 pcm: vec![0; 960],
                 voiced: true,
                 end_passage: false,
+                capture_start_epoch_us: None,
             }))
         }
     }
@@ -802,6 +828,7 @@ mod tests {
                     pcm: vec![0; 960],
                     voiced: true,
                     end_passage: false,
+                    capture_start_epoch_us: Some(1_000_000),
                 })
                 .await
                 .unwrap();
@@ -810,6 +837,7 @@ mod tests {
                     pcm: vec![0; 960],
                     voiced: false,
                     end_passage: true,
+                    capture_start_epoch_us: Some(1_030_000),
                 })
                 .await
                 .unwrap();
