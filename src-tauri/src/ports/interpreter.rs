@@ -5,6 +5,112 @@ use serde_json::{Value, json};
 use std::future::Future;
 
 const MAX_REPLY: usize = 65_536;
+pub const MAX_REFORMAT_INPUT_BYTES: usize = 16_384;
+pub const MAX_REFORMAT_OUTPUT_BYTES: usize = 65_536;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ReformatInput {
+    pub content_markdown: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+}
+
+impl ReformatInput {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.content_markdown.trim().is_empty() {
+            return Err("Le contenu de la note est vide ; aucune reformulation demandée.");
+        }
+        if self
+            .context
+            .as_ref()
+            .is_some_and(|text| text.trim().is_empty())
+            || self
+                .instructions
+                .as_ref()
+                .is_some_and(|text| text.trim().is_empty())
+        {
+            return Err("Les champs facultatifs vides doivent être omis.");
+        }
+        if serde_json::to_vec(self)
+            .map_err(|_| "Préparation de la reformulation impossible.")?
+            .len()
+            > MAX_REFORMAT_INPUT_BYTES
+        {
+            return Err("Contexte LLM trop volumineux ; aucun effet.");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReformatOutput {
+    pub content_markdown: String,
+}
+
+impl ReformatOutput {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.content_markdown.trim().is_empty() {
+            return Err("Réponse LLM vide ; aucun effet.");
+        }
+        if self.content_markdown.len() > MAX_REFORMAT_OUTPUT_BYTES {
+            return Err("Réponse LLM trop volumineuse.");
+        }
+        Ok(())
+    }
+}
+
+pub trait Reformatter {
+    fn reformat(
+        &self,
+        input: ReformatInput,
+    ) -> impl Future<Output = Result<(ReformatOutput, String), &'static str>> + Send;
+}
+
+pub fn reformat_response_format() -> Value {
+    json!({
+        "type": "json_schema",
+        "json_schema": {
+            "name": "reformatted_note",
+            "strict": true,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "content_markdown": {
+                        "type": "string",
+                        "maxLength": MAX_REFORMAT_OUTPUT_BYTES
+                    }
+                },
+                "required": ["content_markdown"],
+                "additionalProperties": false
+            }
+        }
+    })
+}
+
+pub fn decode_reformat(text: &str) -> Result<ReformatOutput, &'static str> {
+    if text.len() > MAX_REFORMAT_OUTPUT_BYTES {
+        return Err("Réponse LLM trop volumineuse.");
+    }
+    let response: ReformatOutput = serde_json::from_str(text).map_err(|error| {
+        crate::diagnostics::numbers(
+            "LLM : réponse de reformulation hors contrat (métadonnées uniquement)",
+            &[
+                ("response_bytes", text.len() as u64),
+                ("json_syntax", u64::from(error.is_syntax())),
+                ("json_data", u64::from(error.is_data())),
+                ("json_eof", u64::from(error.is_eof())),
+                ("line", error.line() as u64),
+                ("column", error.column() as u64),
+            ],
+        );
+        "Réponse LLM hors contrat strict."
+    })?;
+    response.validate()?;
+    Ok(response)
+}
 
 pub trait Interpreter {
     fn interpret_final(

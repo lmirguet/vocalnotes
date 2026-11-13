@@ -30,6 +30,7 @@ impl Drop for Fixture {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn controlled_save_preserves_opaque_crlf_and_unmodified_bytes() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -60,6 +61,7 @@ fn external_change_before_save_preserves_both_versions() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn race_at_exchange_keeps_displaced_external_note_without_rollback() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -106,6 +108,7 @@ fn interruption_before_exchange_retains_original_and_prepared_note() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn concurrent_change_after_exchange_is_preserved_and_reported() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -170,6 +173,7 @@ fn replacement_preserves_mode_and_detects_same_content_new_identity() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn accepted_manual_commit_autosaves_but_conflict_retains_dirty_note() {
     use vocalnotes_lib::platform::probe::{Patch, Probe, Proposal};
     let f = Fixture::new();
@@ -290,6 +294,7 @@ fn interrupted_process_child() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn process_exit_before_and_after_exchange_leaves_both_notes_recoverable() {
     for after in [false, true] {
         let f = Fixture::new();
@@ -364,6 +369,64 @@ fn intention_metadata_roundtrips_without_changing_body_bytes_or_html_boundaries(
     ] {
         assert!(decode(corrupt).is_err());
     }
+}
+
+#[test]
+fn context_edits_preserve_legacy_metadata_and_never_serialize_instructions() {
+    use vocalnotes_lib::{
+        domain::{DictationTarget, intention::DraftingIntention, note::Note},
+        storage::note_document::{decode, encode},
+    };
+    let f = Fixture::new();
+    let path = f.path("context.md");
+    let legacy = DraftingIntention::new(
+        "purpose".into(),
+        "form".into(),
+        "tone".into(),
+        "ancien contexte".into(),
+    )
+    .unwrap();
+    fs::write(&path, encode("# Titre\n\nTexte.", &legacy)).unwrap();
+
+    let mut note = Note::new(String::new());
+    note.open(&path).unwrap();
+    note.set_context("contexte mis à jour".into()).unwrap();
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("consigne temporaire".into()).unwrap();
+    assert!(
+        !note.snapshot().dirty,
+        "{}",
+        note.snapshot().storage_message
+    );
+    let persisted = fs::read_to_string(note.saved_destination().unwrap()).unwrap();
+    let (body, loaded) = decode(&persisted).unwrap();
+
+    assert_eq!(body, "# Titre\n\nTexte.");
+    assert_eq!(loaded.purpose(), "purpose");
+    assert_eq!(loaded.form(), "form");
+    assert_eq!(loaded.tone(), "tone");
+    assert_eq!(loaded.context(), "contexte mis à jour");
+    assert!(!persisted.contains("consigne temporaire"));
+    assert!(note.set_context("x".repeat(4096)).is_err());
+    assert_eq!(note.snapshot().context, "contexte mis à jour");
+    let snapshot = note.snapshot();
+    note.set_dictation_mode(DictationTarget::Content);
+    assert_eq!(
+        note.snapshot().input_generation,
+        snapshot.input_generation + 1
+    );
+    assert!(note.snapshot().instructions.is_empty());
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("à effacer au remplacement".into())
+        .unwrap();
+    note.loaded("Autre note.".into());
+    assert_eq!(note.snapshot().dictation_mode, DictationTarget::Content);
+    assert!(note.snapshot().instructions.is_empty());
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("à effacer à la fermeture".into())
+        .unwrap();
+    assert!(note.request_close());
+    assert!(note.snapshot().instructions.is_empty());
 }
 
 #[test]

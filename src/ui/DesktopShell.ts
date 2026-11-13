@@ -1,5 +1,4 @@
 import { Decoration, DecorationSet } from "prosemirror-view";
-import { createIntentionView } from "./IntentionView";
 import { createChangeView } from "./ChangeView";
 import { createSessionStatus } from "./SessionStatus";
 import { createTranscriptView } from "./TranscriptView";
@@ -61,20 +60,18 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   let sending = false;
   let synchronized = true;
   let acting = false;
+  let reformatBusy = false;
   let feedback = canonical.message;
   const queue: Pending[] = [];
   const undo: History[] = [];
   const redo: History[] = [];
   const nonce = crypto.randomUUID();
 
-  const heading = document.createElement("h1");
-  heading.textContent = "Bloc-notes vocal";
   const menuBar = createMenuBar(nonce);
   const menu = menuBar.element;
   const group = menuBar.group;
   const status = createStatusView();
-  const sessionStatus = createSessionStatus(() => void act({ type: "pause" }));
-  const intention = createIntentionView();
+  const sessionStatus = createSessionStatus();
   let locateHighlight = DecorationSet.empty;
   let locateTimer: number | undefined;
   function clearLocateHighlight() {
@@ -104,10 +101,10 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   const notice = document.createElement("p");
   notice.textContent = "Notes Markdown locales, sauvegarde contrôlée vers la destination choisie ; " +
     "les blocs non pris en charge restent opaques. Le vocal exige la surveillance OS native disponible. " +
-    "Audio et passages finalisés, intention et sections éditables nécessaires transmis à OpenAI ; " +
-    "les provisoires servent aussi à l'interruption naturelle (requêtes supplémentaires). " +
+    "L'audio est transmis au fournisseur de transcription configuré quand un mode vocal est actif ; le contenu, le contexte et les instructions " +
+    "ne sont transmis qu'après demande explicite de reformulation. " +
     "Tarifs et conservation fournisseur inconnus : aucun contenu sensible. " +
-    "Attention aux paroles de tiers en arrière-plan. Aucune notification hors fenêtre.";
+    "Le mode actif peut capter des paroles à proximité. Aucune notification hors fenêtre.";
   const configuredModels = document.createElement("p");
   configuredModels.textContent = "Modèles configurés indisponibles ; consulter les préférences. Accès non vérifié.";
   let modelsSaved = false;
@@ -126,8 +123,93 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   button(migration, "Fermer", "dismiss-migration", () => { migration.hidden = true; });
   let migrationShown = false;
   const editor = document.createElement("section");
+  editor.className = "note-editor";
+  editor.dataset.workspace = "content";
   const noteEvidence = createRenderEvidence(editor, "note-commit");
   editor.setAttribute("aria-label", "Note");
+  const noteFields = document.createElement("section");
+  noteFields.className = "context-panel";
+  noteFields.dataset.workspace = "context";
+  noteFields.setAttribute("aria-label", "Contexte de la note");
+  const contextLabel = document.createElement("label");
+  contextLabel.textContent = "Contexte de la note";
+  const contextField = document.createElement("textarea");
+  contextField.rows = 3;
+  contextField.dataset.dictationField = "context";
+  contextField.setAttribute("aria-label", "Contexte de la note");
+  contextLabel.append(contextField);
+  const instructionsLabel = document.createElement("label");
+  instructionsLabel.textContent = "Instructions temporaires";
+  const instructionsField = document.createElement("textarea");
+  instructionsField.rows = 3;
+  instructionsField.dataset.dictationField = "instructions";
+  instructionsField.setAttribute("aria-label", "Instructions temporaires");
+  instructionsLabel.append(instructionsField);
+  const instructionsPopup = document.createElement("section");
+  instructionsPopup.id = `instructions-popup-${nonce}`;
+  instructionsPopup.setAttribute("aria-label", "Instructions temporaires");
+  instructionsPopup.append(instructionsLabel);
+  noteFields.append(contextLabel);
+  const workspace = document.createElement("section");
+  workspace.className = "note-workspace";
+  workspace.setAttribute("aria-label", "Espace de rédaction");
+  const separator = document.createElement("hr");
+  separator.className = "workspace-separator";
+  separator.setAttribute("role", "separator");
+  separator.setAttribute("aria-orientation", "horizontal");
+  workspace.append(noteFields, separator, editor);
+  type FieldKey = "context" | "instructions";
+  const fieldActionTimers = new Map<FieldKey, number>();
+  const pendingFieldActions = new Map<FieldKey, Record<string, string | boolean>>();
+  const fieldActionsInFlight = new Set<FieldKey>();
+  const queuedDictationActions: Array<Record<string, string | boolean>> = [];
+  function fieldKey(action: Record<string, string | boolean>): FieldKey {
+    return action.type === "set_context" ? "context" : "instructions";
+  }
+  function hasPendingFieldAction(key: FieldKey) {
+    return pendingFieldActions.has(key) || fieldActionsInFlight.has(key)
+      || queuedDictationActions.some(action => action.type === `set_${key}`);
+  }
+  function isDictationAction(action: Record<string, string | boolean>) {
+    return ["set_dictation_mode", "set_context", "set_instructions"].includes(String(action.type));
+  }
+  function drainDictationActions() {
+    if (disposed || acting || sending || queue.length) return;
+    const action = queuedDictationActions.shift();
+    if (action) {
+      const field = action.type === "set_context" ? "context"
+        : action.type === "set_instructions" ? "instructions" : undefined;
+      if (field) fieldActionsInFlight.add(field);
+      queueMicrotask(() => void act(action).finally(() => {
+        if (field) { fieldActionsInFlight.delete(field); show(); }
+      }));
+    }
+  }
+  function queueFieldAction(action: Record<string, string | boolean>) {
+    const key = fieldKey(action);
+    const timer = fieldActionTimers.get(key);
+    if (timer !== undefined) window.clearTimeout(timer);
+    pendingFieldActions.set(key, action);
+    fieldActionTimers.set(key, window.setTimeout(() => { void flushFieldAction(key); }, 200));
+  }
+  async function flushFieldAction(key?: FieldKey): Promise<void> {
+    const keys = key ? [key] : [...pendingFieldActions.keys()];
+    for (const field of keys) {
+      const action = pendingFieldActions.get(field);
+      if (!action) continue;
+      const timer = fieldActionTimers.get(field);
+      if (timer !== undefined) window.clearTimeout(timer);
+      fieldActionTimers.delete(field);
+      pendingFieldActions.delete(field);
+      fieldActionsInFlight.add(field);
+      try { await act(action); }
+      finally { fieldActionsInFlight.delete(field); }
+    }
+  }
+  contextField.addEventListener("input", () => queueFieldAction({ type: "set_context", text: contextField.value }));
+  contextField.addEventListener("blur", () => { void flushFieldAction(); });
+  instructionsField.addEventListener("input", () => queueFieldAction({ type: "set_instructions", text: instructionsField.value }));
+  instructionsField.addEventListener("blur", () => { void flushFieldAction(); });
   const recovered = document.createElement("pre");
   recovered.hidden = true;
   recovered.setAttribute("aria-label", "Saisie non acceptée récupérable en mémoire");
@@ -145,13 +227,19 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     } else noteEvidence.cancel();
     sessionStatus.render(canonical);
     changes.render(canonical);
-    intention.render(canonical);
     renderStatus(status, canonical, projected, message, queue.length);
-    undoButton.disabled = projected.mode !== "manual" || queue.length > 0 || !undo.length;
-    redoButton.disabled = projected.mode !== "manual" || queue.length > 0 || !redo.length;
-    setFormattingEnabled(projected.mode === "manual" && synchronized && !acting);
-    startButton.disabled = !consent.checked || canonical.closePending === true || projected.mode === "voice" || sending || queue.length > 0;
-    resumeButton.disabled = !consent.checked || projected.mode !== "paused";
+    controls.setDictationMode(
+      canonical.mode === "voice" ? canonical.dictationMode : null,
+      canonical.dictationTransitionPending,
+    );
+    controls.setReformatBusy(reformatBusy);
+    if (document.activeElement !== contextField && !hasPendingFieldAction("context"))
+      contextField.value = canonical.context;
+    if (document.activeElement !== instructionsField && !hasPendingFieldAction("instructions"))
+      instructionsField.value = canonical.instructions;
+    undoButton.disabled = queue.length > 0 || !undo.length;
+    redoButton.disabled = queue.length > 0 || !redo.length;
+    setFormattingEnabled(synchronized && !acting);
   }
   function restore(s: Snapshot, message: string) {
     clearLocateHighlight();
@@ -168,8 +256,8 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, anchor, head)));
     }
     view.updateState(state);
-    view.setProps({ editable: () => synchronized && projected.mode === "manual" });
-    if (focused && projected.mode === "manual") view.focus();
+    view.setProps({ editable: () => synchronized });
+    if (focused) view.focus();
     recovered.textContent = recovery;
     recovered.hidden = !recovery;
     show(message);
@@ -219,7 +307,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       synchronized = false;
       view.setProps({ editable: () => false });
       show("Échec du cœur : édition suspendue ; saisie récupérable en mémoire, aucun rejeu.");
-    } finally { sending = false; show(); }
+    } finally { sending = false; show(); drainDictationActions(); }
   }
 
   function enqueue(patches: Patch[], structural: boolean, beforeState: EditorState, blocks?: Block[]) {
@@ -241,7 +329,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   function dispatch(tr: Transaction) {
     if (!tr.docChanged) { view.updateState(view.state.apply(tr)); return; }
     if (acting) { show("Action en cours ; attendre son résultat avant de modifier la note."); return; }
-    if (!synchronized || projected.mode !== "manual") return;
+    if (!synchronized) return;
     clearLocateHighlight();
     const beforeState = view.state;
     if (sending && !queue.length) {
@@ -324,21 +412,28 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   function editorState(s: Snapshot) {
     return EditorState.create({ schema, doc: documentFor(s), plugins: [
       keymap({
-        "Mod-z": () => { if (projected.mode !== "manual") return false; void history("undo"); return true; },
-        "Mod-y": () => { if (projected.mode !== "manual") return false; void history("redo"); return true; },
-        "Shift-Mod-z": () => { if (projected.mode !== "manual") return false; void history("redo"); return true; },
+        "Mod-z": () => { void history("undo"); return true; },
+        "Mod-y": () => { void history("redo"); return true; },
+        "Shift-Mod-z": () => { void history("redo"); return true; },
       }), keymap(baseKeymap),
     ] });
   }
   const view = createNoteView(editor, {
     state: editorState(projected),
-    editable: () => synchronized && projected.mode === "manual",
+    editable: () => synchronized,
     dispatchTransaction: dispatch,
     attributes: { "aria-label": "Note visuelle", role: "textbox", "aria-multiline": "true" },
   });
 
   async function act(action: Record<string, string | boolean>) {
-    if (acting || sending || queue.length) { show("Attendre l'acquittement des modifications avant cette action."); return; }
+    if (pendingFieldActions.size && !["set_context", "set_instructions"].includes(String(action.type))) {
+      await flushFieldAction();
+    }
+    if (acting || sending || queue.length) {
+      if (isDictationAction(action)) queuedDictationActions.push(action);
+      else show("Attendre l'acquittement des modifications avant cette action.");
+      return;
+    }
     acting = true;
     try {
       const s = await invoke<Snapshot>("prototype_action", { action });
@@ -362,6 +457,9 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
         "Choisir une destination Markdown locale avant la sauvegarde ; aucun effet.",
         "Création exclusive impossible : choisir un nouveau fichier Markdown local.",
         "Écriture incomplète : note conservée en mémoire, vérifier la copie.",
+        "Intention trop volumineuse : aucun effet.",
+        "Instructions trop volumineuses ; aucune modification appliquée.",
+        "Les instructions ne sont modifiables qu'en mode Instructions.",
         "Note inaccessible.", "Lecture UTF-8 impossible.",
         "Note ordinaire UTF-8 de moins de 1 Mio requise.",
       ];
@@ -375,7 +473,79 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
         } else restore(s, s.storageMessage || message);
       }
       catch { show("Échec du cœur ; aucune réussite annoncée."); }
-    } finally { acting = false; show(); }
+    } finally { acting = false; show(); drainDictationActions(); }
+  }
+  async function waitForPendingEdits() {
+    while (!disposed) {
+      if (pendingFieldActions.size) await flushFieldAction();
+      if (!acting && !sending && queue.length === 0 && queuedDictationActions.length === 0
+        && pendingFieldActions.size === 0 && fieldActionsInFlight.size === 0) return true;
+      await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
+    return false;
+  }
+  async function reformat() {
+    if (disposed) return;
+    if (reformatBusy) {
+      show("Attendre les modifications en cours avant de reformuler.");
+      return;
+    }
+    reformatBusy = true;
+    show("Préparation de la reformulation demandée.");
+    try {
+      if (!(await waitForPendingEdits())) return;
+      for (const [type, field, value] of [
+        ["set_context", "context", contextField.value],
+        ["set_instructions", "instructions", instructionsField.value],
+      ] as const) {
+        if (canonical[field] === value) continue;
+        await act({ type, text: value });
+        if (canonical[field] !== value) {
+          show("Contexte ou instructions non enregistrés ; aucune reformulation lancée.");
+          return;
+        }
+      }
+      if (!(await waitForPendingEdits())) return;
+      if (contextField.value !== canonical.context || instructionsField.value !== canonical.instructions) {
+        show("Contexte ou instructions non enregistrés ; aucune reformulation lancée.");
+        return;
+      }
+      show("Reformulation explicitement demandée ; contenu inchangé en attente.");
+      const s = await invoke<Snapshot>("prototype_reformat", {
+        noteId: canonical.noteId, baseRevision: canonical.revision,
+      });
+      if (disposed) return;
+      if (s.noteId !== canonical.noteId || s.revision < canonical.revision) {
+        const current = await invoke<Snapshot>("prototype_snapshot");
+        if (projected.source !== canonical.source) recovery = projected.source;
+        restore(current, "Résultat périmé ; la note courante et toute saisie non acceptée sont conservées.");
+      } else if (s.revision !== canonical.revision || s.source !== canonical.source) {
+        if (projected.source !== canonical.source) recovery = projected.source;
+        restore(s, s.message);
+      } else {
+        canonical = s;
+        projected = { ...s, blocks: projected.blocks };
+        show(s.message);
+      }
+    } catch {
+      const message = "Reformulation impossible ; contenu conservé.";
+      try {
+        const s = await invoke<Snapshot>("prototype_snapshot");
+        if (s.noteId !== canonical.noteId || s.revision !== canonical.revision || s.source !== canonical.source) {
+          if (projected.source !== canonical.source) recovery = projected.source;
+          restore(s, message);
+        } else {
+          canonical = s;
+          projected = { ...s, blocks: projected.blocks };
+          show(message);
+        }
+      } catch {
+        show("Échec du cœur ; contenu et saisie récupérable conservés.");
+      }
+    } finally {
+      reformatBusy = false;
+      show();
+    }
   }
   const files = group("Fichier");
   button(files, "Nouvelle note", "new", () => void act({ type: "new" }));
@@ -407,7 +577,7 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
   });
   async function history(direction: "undo" | "redo") {
     clearLocateHighlight();
-    if (acting || sending || queue.length || projected.mode !== "manual") return;
+    if (acting || sending || queue.length) return;
     const stack = direction === "undo" ? undo : redo;
     const entry = stack.at(-1);
     if (!entry) return;
@@ -447,24 +617,26 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       }
     } finally {
       sending = false;
-      view.setProps({ editable: () => synchronized && projected.mode === "manual" });
+      view.setProps({ editable: () => synchronized });
     }
   }
   const undoButton = button(edits, "Annuler", "undo", () => void history("undo"));
   const redoButton = button(edits, "Rétablir", "redo", () => void history("redo"));
   const help = group("Aide");
   const helpText = document.createElement("p");
-  helpText.textContent = "Audio, transcription et intention restent temporaires. " +
-    "Micro ouvert seulement après accord, démarrage explicite et surveillance OS établie. Une note seule est enregistrée. " +
+  helpText.textContent = "Audio, transcription et instructions restent temporaires. " +
+    "Le microphone s'ouvre avec un mode de dictée après établissement de la surveillance OS. Une note seule est enregistrée. " +
     "Avec une destination connue, chaque modification acceptée est sauvegardée après contrôle du fichier disque ; " +
     "sans destination, en cas de conflit ou d’erreur, fermeture suspendue et note accessible. " +
-    "Coût et conservation OpenAI inconnus ; pas de données sensibles. Aucun indicateur hors fenêtre.";
+    "Le contenu, le contexte et les instructions ne quittent l'application que par une action explicite de reformulation. " +
+    "Le vocal peut capter des paroles de tiers à proximité ; coût et conservation du fournisseur inconnus. Pas de données sensibles.";
   help.append(helpText);
   const controls = createToolbar({
-    format: command => { if (projected.mode === "manual") command(view.state, view.dispatch, view); },
-    act: action => void act(action), changed: () => show(),
+    format: command => { command(view.state, view.dispatch, view); },
+    act: action => void act(action), reformat: () => void reformat(),
   });
-  const { element: toolbar, consent, startButton, resumeButton, setFormattingEnabled } = controls;
+  controls.setInstructionPopup(instructionsPopup);
+  const { element: toolbar, setFormattingEnabled } = controls;
   const keyForm = document.createElement("section");
   keyForm.setAttribute("aria-label", "Clé OpenAI — trousseau du système");
   const keyLabel = document.createElement("label");
@@ -490,7 +662,10 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
       .catch(() => show("Échec du trousseau ; présence inconnue."));
   });
   preferences.element.append(keyForm);
-  root.replaceChildren(heading, menu, notice, configuredModels, toolbar, sessionStatus.element, status, migration, transcript.element, changes.element, intention.element, editor, recovered, preferences.element);
+  help.append(notice, helpText);
+  root.dataset.desktopShell = "true";
+  root.classList.add("desktop-shell");
+  root.replaceChildren(menu, configuredModels, toolbar, sessionStatus.element, status, migration, transcript.element, changes.element, workspace, recovered, preferences.element);
   show();
   // Internal polling makes a blocked native close visible without requiring event permissions.
   const timer = window.setInterval(() => {
@@ -527,10 +702,13 @@ export async function mountDesktopShell(root: HTMLElement, rawInvoke: Invoke) {
     view,
     destroy() {
       disposed = true;
+      for (const timer of fieldActionTimers.values()) window.clearTimeout(timer);
+      fieldActionTimers.clear();
+      pendingFieldActions.clear();
+      queuedDictationActions.length = 0;
       menuBar.destroy();
       transcript.destroy();
       noteEvidence.destroy();
-      intention.clear();
       clearLocateHighlight();
       window.clearInterval(timer);
       secret.value = ""; recovery = ""; queue.length = 0; view.destroy();

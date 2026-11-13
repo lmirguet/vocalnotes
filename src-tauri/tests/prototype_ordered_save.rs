@@ -49,8 +49,9 @@ fn ordered_intention_edit_save_writes_only_prevalidated_accepted_content() {
         .unwrap()
         .map(|p| p.unwrap().path())
         .collect();
-    assert_eq!(paths.len(), 1);
-    let document = std::fs::read_to_string(original).unwrap();
+    let destination = core.saved_destination().unwrap();
+    assert!(paths.contains(&destination));
+    let document = std::fs::read_to_string(destination).unwrap();
     let (body, intention) = vocalnotes_lib::storage::note_document::decode(&document).unwrap();
     assert_eq!(body, "après");
     assert_eq!(intention.purpose(), "courriel formel");

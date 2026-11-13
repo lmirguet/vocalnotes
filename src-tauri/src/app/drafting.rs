@@ -1,86 +1,81 @@
-//! Final-passage orchestration. No transcript history, retry or semantic guess.
+//! Explicit content-only reformatting orchestration.
 use crate::{
-    domain::{intention::DraftingIntention, note::Note, session::Ticket},
-    ports::interpreter::{InterpretationContext, Interpreter, Intervention},
+    domain::note::Note,
+    ports::interpreter::{ReformatInput, ReformatOutput, Reformatter},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FailureStage {
-    Recognition,
-    Interpretation,
-    Application,
-}
-pub struct ApplicationFailure {
-    pub stage: FailureStage,
-    pub reason: &'static str,
-}
-impl FailureStage {
-    pub fn message(self) -> &'static str {
-        match self {
-            Self::Recognition => "Échec de reconnaissance STT : aucun passage final utilisable.",
-            Self::Interpretation => {
-                "Échec d’interprétation LLM : aucun effet de cette intervention."
-            }
-            Self::Application => "Échec d’application : intervention refusée par le cœur.",
-        }
-    }
+#[derive(Debug)]
+pub struct ReformatRequest {
+    note_id: u64,
+    base_revision: u64,
+    input_generation: u64,
+    input: ReformatInput,
+    opaque_blocks: Vec<String>,
 }
 
-pub struct DraftingRequest {
-    ticket: Ticket,
-    intention: DraftingIntention,
-    candidates: InterpretationContext,
-}
-pub struct DraftingReply {
-    ticket: Ticket,
-    response: Intervention,
+pub struct ReformatReply {
+    note_id: u64,
+    base_revision: u64,
+    input_generation: u64,
+    input_opaque_blocks: Vec<String>,
+    output: ReformatOutput,
     pub model: String,
 }
-impl DraftingRequest {
-    pub fn prepare(note: &mut Note, sequence: u64, passage_id: u64) -> Result<Self, FailureStage> {
-        let ticket = note
-            .voice_ticket_for(sequence, passage_id)
-            .map_err(|_| FailureStage::Application)?;
-        let request = Self {
-            ticket,
-            intention: note.drafting_intention().clone(),
-            candidates: InterpretationContext {
-                blocks: note.candidates(),
-                save_available: note.can_save(),
-            },
-        };
-        note.processing();
-        Ok(request)
-    }
-    pub async fn interpret(
-        self,
-        interpreter: &impl Interpreter,
-        finalized: &str,
-    ) -> Result<DraftingReply, FailureStage> {
-        if finalized.trim().is_empty() {
-            return Err(FailureStage::Recognition);
+
+impl ReformatRequest {
+    pub fn prepare(note: &Note, note_id: u64, base_revision: u64) -> Result<Self, &'static str> {
+        let snapshot = note.snapshot();
+        if snapshot.note_id != note_id || snapshot.revision != base_revision {
+            return Err("La note a changé ; relancer explicitement la reformulation.");
         }
-        let (response, model) = interpreter
-            .interpret_final(finalized, &self.intention, self.candidates)
-            .await
-            .map_err(|_| FailureStage::Interpretation)?;
-        // Fake/custom adapters must obey the same whole-envelope boundary.
-        response
-            .validate()
-            .map_err(|_| FailureStage::Interpretation)?;
-        Ok(DraftingReply {
-            ticket: self.ticket,
-            response,
+        let input = ReformatInput {
+            content_markdown: snapshot.source,
+            context: (!snapshot.context.trim().is_empty()).then_some(snapshot.context),
+            instructions: (!snapshot.instructions.trim().is_empty())
+                .then_some(snapshot.instructions),
+        };
+        input.validate()?;
+        let opaque_blocks = snapshot
+            .blocks
+            .into_iter()
+            .filter(|block| block.kind == "opaque")
+            .map(|block| block.raw)
+            .collect();
+        Ok(Self {
+            note_id: snapshot.note_id,
+            base_revision: snapshot.revision,
+            input_generation: snapshot.input_generation,
+            input,
+            opaque_blocks,
+        })
+    }
+
+    pub async fn reformat(
+        self,
+        reformatter: &impl Reformatter,
+    ) -> Result<ReformatReply, &'static str> {
+        let (output, model) = reformatter.reformat(self.input).await?;
+        output.validate()?;
+        Ok(ReformatReply {
+            note_id: self.note_id,
+            base_revision: self.base_revision,
+            input_generation: self.input_generation,
+            input_opaque_blocks: self.opaque_blocks,
+            output,
             model,
         })
     }
 }
-impl DraftingReply {
-    pub fn commit(self, note: &mut Note) -> Result<(), ApplicationFailure> {
-        note.commit_voice(&self.ticket, self.response)
-            .map_err(|reason| ApplicationFailure {
-                stage: FailureStage::Application,
-                reason,
-            })
+
+impl ReformatReply {
+    pub fn commit(self, note: &mut Note) -> Result<(), &'static str> {
+        note.apply_reformat(
+            self.note_id,
+            self.base_revision,
+            self.input_generation,
+            &self.input_opaque_blocks,
+            self.output.content_markdown,
+            &self.model,
+        )
     }
 }

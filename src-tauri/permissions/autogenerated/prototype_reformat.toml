@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prototype-reformat"
+description = "Enables the prototype_reformat command without any pre-configured scope."
+commands.allow = ["prototype_reformat"]
+
+[[permission]]
+identifier = "deny-prototype-reformat"
+description = "Denies the prototype_reformat command without any pre-configured scope."
+commands.deny = ["prototype_reformat"]

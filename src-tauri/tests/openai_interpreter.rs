@@ -447,6 +447,7 @@ impl ResponsesTransport for PendingTransport {
 
 #[tokio::test]
 async fn absolute_45_second_deadline_drops_inflight_work_despite_continuous_progress() {
+    use vocalnotes_lib::ports::interpreter::ReformatInput;
     let transport = PendingTransport::default();
     let adapter =
         OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", transport.clone())
@@ -454,7 +455,11 @@ async fn absolute_45_second_deadline_drops_inflight_work_despite_continuous_prog
     let start = Instant::now();
     let error = tokio::time::timeout(
         Duration::from_secs(60),
-        adapter.interpret_final("passage", &DraftingIntention::default(), context()),
+        adapter.reformat(ReformatInput {
+            content_markdown: "Note.".into(),
+            context: None,
+            instructions: None,
+        }),
     )
     .await
     .expect("absolute deadline must finish even while the transport makes progress")
@@ -471,6 +476,7 @@ async fn absolute_45_second_deadline_drops_inflight_work_despite_continuous_prog
 
 #[tokio::test]
 async fn caller_cancellation_drops_the_transport_without_background_work() {
+    use vocalnotes_lib::ports::interpreter::ReformatInput;
     let transport = PendingTransport::default();
     let adapter =
         OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", transport.clone())
@@ -478,7 +484,11 @@ async fn caller_cancellation_drops_the_transport_without_background_work() {
     assert!(
         tokio::time::timeout(
             Duration::from_millis(50),
-            adapter.interpret_final("passage", &DraftingIntention::default(), context()),
+            adapter.reformat(ReformatInput {
+                content_markdown: "Note.".into(),
+                context: None,
+                instructions: None,
+            }),
         )
         .await
         .is_err()
@@ -520,4 +530,160 @@ async fn ordinary_context_accepts_exactly_16384_serialized_bytes_and_rejects_one
             .is_err()
     );
     assert_eq!(fake.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn explicit_reformat_sends_only_current_nonblank_fields_and_a_content_only_schema() {
+    use vocalnotes_lib::ports::interpreter::ReformatInput;
+    let fake = FakeTransport::new([success(
+        r##"{"content_markdown":"# Titre\n\nTexte corrigé."}"##,
+    )]);
+    let adapter =
+        OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", fake.clone())
+            .unwrap();
+    let (output, model) = adapter
+        .reformat(ReformatInput {
+            content_markdown: "# Titre\n\nTexte.".into(),
+            context: None,
+            instructions: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(output.content_markdown, "# Titre\n\nTexte corrigé.");
+    assert_eq!(model, "gpt-6-luna");
+
+    let requests = fake.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request["store"], false);
+    assert_eq!(request["stream"], false);
+    assert_eq!(request["text"]["format"]["name"], "reformatted_note");
+    let schema = &request["text"]["format"]["schema"];
+    assert_eq!(schema["required"], json!(["content_markdown"]));
+    assert_eq!(
+        schema["properties"].as_object().unwrap().len(),
+        1,
+        "the provider cannot return actions, context, or instructions"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(request["input"].as_str().unwrap()).unwrap(),
+        json!({"content_markdown":"# Titre\n\nTexte."})
+    );
+
+    let with_fields = ReformatInput {
+        content_markdown: "Note.".into(),
+        context: Some("Contexte".into()),
+        instructions: Some("Corrige le style.".into()),
+    };
+    with_fields.validate().unwrap();
+    assert_eq!(
+        serde_json::to_value(with_fields).unwrap(),
+        json!({
+            "content_markdown":"Note.",
+            "context":"Contexte",
+            "instructions":"Corrige le style."
+        })
+    );
+}
+
+#[tokio::test]
+async fn explicit_reformat_rejects_empty_oversized_and_malformed_content() {
+    use vocalnotes_lib::ports::interpreter::ReformatInput;
+    let fake = FakeTransport::new([success(r#"{"content_markdown":""}"#)]);
+    let adapter =
+        OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", fake.clone())
+            .unwrap();
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: " \n".into(),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: "x".repeat(16_384),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
+    assert!(fake.requests().is_empty(), "invalid inputs are never sent");
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: "Note.".into(),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(fake.requests().len(), 1, "no retry after malformed output");
+
+    let fake = FakeTransport::new([success(r#"{"content_markdown":"Note.","actions":[]}"#)]);
+    let adapter =
+        OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", fake.clone())
+            .unwrap();
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: "Note.".into(),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(fake.requests().len(), 1);
+
+    let refusal = ResponsesReply {
+        status: 200,
+        body: json!({
+            "model":"gpt-6-luna",
+            "status":"completed",
+            "output":[{"type":"message","role":"assistant","content":[
+                {"type":"refusal","refusal":"synthetic refusal"}
+            ]}]
+        })
+        .to_string()
+        .into_bytes(),
+    };
+    let fake = FakeTransport::new([refusal]);
+    let adapter =
+        OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", fake.clone())
+            .unwrap();
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: "Note.".into(),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(fake.requests().len(), 1);
+
+    let fake = FakeTransport::new([ResponsesReply {
+        status: 200,
+        body: vec![b'x'; 65_537],
+    }]);
+    let adapter =
+        OpenAIInterpreter::with_transport(&selection(), "synthetic-test-key", fake).unwrap();
+    assert!(
+        adapter
+            .reformat(ReformatInput {
+                content_markdown: "Note.".into(),
+                context: None,
+                instructions: None,
+            })
+            .await
+            .is_err()
+    );
 }

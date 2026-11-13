@@ -9,14 +9,10 @@ use std::{
 };
 use vocalnotes_lib::{
     adapters::{
-        mistral_interpreter::{ChatReply, ChatTransport, MistralInterpreter, build_request},
+        mistral_interpreter::{ChatTransport, build_request},
         mistral_stt::{JsonReceiver, JsonSender, SttSession},
     },
-    config::preferences::Preferences,
-    ports::{
-        interpreter::{InterpretationContext, Interruption},
-        stt::SttEvent,
-    },
+    ports::stt::SttEvent,
 };
 
 struct FakeSocket {
@@ -179,40 +175,6 @@ async fn failed_audio_send_is_terminal_and_is_never_replayed() {
     );
 }
 
-struct FakeChat {
-    replies: Mutex<VecDeque<Result<ChatReply, &'static str>>>,
-    requests: Mutex<Vec<Value>>,
-}
-impl ChatTransport for FakeChat {
-    async fn execute(&self, request: Value) -> Result<ChatReply, &'static str> {
-        self.requests.lock().unwrap().push(request);
-        self.replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or(Err("synthetic-secret-error"))
-    }
-}
-fn chat(content: &str, reason: &str) -> ChatReply {
-    ChatReply{status:200,body:json!({"model":"served-llm","choices":[{"finish_reason":reason,"message":{"content":content}}]}).to_string().into_bytes()}
-}
-fn context() -> InterpretationContext {
-    InterpretationContext {
-        blocks: vec![],
-        save_available: false,
-    }
-}
-fn adapter(replies: Vec<Result<ChatReply, &'static str>>) -> MistralInterpreter<FakeChat> {
-    MistralInterpreter::with_transport(
-        &Preferences::default().llm,
-        FakeChat {
-            replies: Mutex::new(replies.into()),
-            requests: Mutex::new(vec![]),
-        },
-    )
-    .unwrap()
-}
-
 #[test]
 fn auth_is_sensitive_and_cannot_enter_url_debug_or_json_payload() {
     let body = json!({"model":"mistral-large-latest"});
@@ -220,138 +182,6 @@ fn auth_is_sensitive_and_cannot_enter_url_debug_or_json_payload() {
     assert!(request.headers()["Authorization"].is_sensitive());
     assert!(!request.url().as_str().contains("synthetic-secret-auth"));
     assert!(!format!("{request:?}").contains("synthetic-secret-auth"));
-}
-
-#[tokio::test]
-async fn strict_ordinary_and_priority_requests_are_separate_and_countable() {
-    let llm = adapter(vec![
-        Ok(chat(
-            r#"{"status":"resolved","message":"","actions":[]}"#,
-            "stop",
-        )),
-        Ok(chat(r#"{"interrupt":"pause"}"#, "stop")),
-    ]);
-    let (_, model) = llm
-        .interpret_final(
-            "un passage",
-            &vocalnotes_lib::domain::intention::DraftingIntention::new(
-                "intention".into(),
-                "".into(),
-                "".into(),
-                "".into(),
-            )
-            .unwrap(),
-            context(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(model, "served-llm");
-    assert!(matches!(
-        llm.interpret_interruption("mets en pause").await.unwrap(),
-        Interruption::Pause
-    ));
-    let transport = llm.transport_for_test();
-    let requests = transport.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    let system = requests[0]["messages"][0]["content"].as_str().unwrap();
-    assert!(system.contains("exige une action drafting_intent"));
-    assert!(system.contains("synthèse concise"));
-    assert!(system.contains(r#""tone":"neutre""#));
-    let user: Value =
-        serde_json::from_str(requests[0]["messages"][1]["content"].as_str().unwrap()).unwrap();
-    assert_eq!(user["intention"]["purpose"], "intention");
-    assert_eq!(user["intention"]["form"], "");
-    let variants = requests[0]["response_format"]["json_schema"]["schema"]["properties"]["actions"]
-        ["items"]["anyOf"]
-        .as_array()
-        .unwrap();
-    let intent = variants
-        .iter()
-        .find(|v| v["properties"]["type"]["enum"][0] == "drafting_intent")
-        .unwrap();
-    assert_eq!(
-        intent["required"],
-        json!(["type", "text", "form", "tone", "context"])
-    );
-    for r in requests.iter() {
-        assert_eq!(r["model"], "gpt-6-luna");
-        assert_eq!(r["response_format"]["json_schema"]["strict"], true);
-        assert!(r.get("tools").is_none());
-        assert_eq!(r["messages"].as_array().unwrap().len(), 2);
-    }
-    assert!(
-        !requests[1]["messages"][1]["content"]
-            .as_str()
-            .unwrap()
-            .contains("intention")
-    );
-}
-
-#[tokio::test]
-async fn llm_errors_truncation_and_invalid_json_have_no_retry_or_fallback() {
-    for reply in [
-        Err("synthetic-secret-error"),
-        Ok(ChatReply {
-            status: 401,
-            body: b"synthetic-secret-body".to_vec(),
-        }),
-        Ok(chat("invalid JSON synthetic-secret", "stop")),
-        Ok(chat(
-            r#"{"status":"resolved","message":"","actions":[]}"#,
-            "length",
-        )),
-        Ok(chat(r#"{"interrupt":"replace","actions":[]}"#, "stop")),
-    ] {
-        let llm = adapter(vec![reply]);
-        let error = llm
-            .interpret_final("texte", &Default::default(), context())
-            .await
-            .err()
-            .unwrap();
-        assert!(!error.contains("synthetic-secret"));
-        assert_eq!(llm.transport_for_test().requests.lock().unwrap().len(), 1);
-    }
-}
-
-struct PendingChat {
-    started: Arc<AtomicBool>,
-    dropped: Arc<AtomicBool>,
-}
-struct Dropped(Arc<AtomicBool>);
-impl Drop for Dropped {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
-    }
-}
-impl ChatTransport for PendingChat {
-    async fn execute(&self, _: Value) -> Result<ChatReply, &'static str> {
-        self.started.store(true, Ordering::SeqCst);
-        let _guard = Dropped(self.dropped.clone());
-        std::future::pending().await
-    }
-}
-#[tokio::test]
-async fn cancelling_pending_llm_drops_request_without_retry() {
-    let started = Arc::new(AtomicBool::new(false));
-    let dropped = Arc::new(AtomicBool::new(false));
-    let llm = MistralInterpreter::with_transport(
-        &Preferences::default().llm,
-        PendingChat {
-            started: started.clone(),
-            dropped: dropped.clone(),
-        },
-    )
-    .unwrap();
-    assert!(
-        tokio::time::timeout(
-            Duration::from_millis(5),
-            llm.interpret_final("texte", &Default::default(), context())
-        )
-        .await
-        .is_err()
-    );
-    assert!(started.load(Ordering::SeqCst));
-    assert!(dropped.load(Ordering::SeqCst));
 }
 
 struct BlockingSocket {
@@ -419,33 +249,4 @@ async fn stt_capacity_is_an_error_without_a_second_passage_or_truncation() {
             .count(),
         60
     );
-}
-
-#[tokio::test]
-async fn llm_oversize_tools_and_priority_edit_attempts_are_refused() {
-    let mut tools = chat(r#"{"status":"resolved","message":"","actions":[]}"#, "stop");
-    let mut body: Value = serde_json::from_slice(&tools.body).unwrap();
-    body["choices"][0]["message"]["tool_calls"] = json!([{"name":"shell"}]);
-    tools.body = body.to_string().into_bytes();
-    for reply in [
-        tools,
-        ChatReply {
-            status: 200,
-            body: vec![b' '; 65_537],
-        },
-        chat("{}", "tool_calls"),
-    ] {
-        let llm = adapter(vec![Ok(reply)]);
-        assert!(
-            llm.interpret_final("texte", &Default::default(), context())
-                .await
-                .is_err()
-        );
-        assert_eq!(llm.transport_for_test().requests.lock().unwrap().len(), 1);
-    }
-    let llm = adapter(vec![Ok(chat(
-        r#"{"interrupt":"pause","actions":[{"type":"edit"}]}"#,
-        "stop",
-    ))]);
-    assert!(llm.interpret_interruption("pause").await.is_err());
 }

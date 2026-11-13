@@ -5,6 +5,56 @@ use vocalnotes_lib::platform::{
 };
 use vocalnotes_lib::ports::interpreter::{EditOperation, Status, Target};
 
+#[test]
+fn delayed_transcription_uses_the_target_captured_at_speech_start() {
+    let mut core = Probe::new("Note".into());
+    core.set_dictation_mode(vocalnotes_lib::domain::DictationTarget::Context);
+    let target = core.begin_dictation_segment().unwrap();
+    core.set_dictation_mode(vocalnotes_lib::domain::DictationTarget::Content);
+
+    core.route_dictation_text(target, "Contexte dicté".into())
+        .unwrap();
+
+    let snapshot = core.snapshot();
+    assert_eq!(
+        snapshot.dictation_mode,
+        vocalnotes_lib::domain::DictationTarget::Content
+    );
+    assert_eq!(snapshot.context, "Contexte dicté");
+    assert_eq!(snapshot.source, "Note");
+    assert_eq!(snapshot.llm_requests, 0);
+}
+
+#[test]
+fn leaving_instructions_waits_for_pending_transcription_then_clears_them() {
+    let mut core = Probe::new("Note".into());
+    core.set_dictation_mode(vocalnotes_lib::domain::DictationTarget::Instructions);
+    core.set_instructions("Reformater sans ajouter d'idées.".into())
+        .unwrap();
+    let target = core.begin_dictation_segment().unwrap();
+
+    core.set_dictation_mode(vocalnotes_lib::domain::DictationTarget::Context);
+    let pending = core.snapshot();
+    assert_eq!(
+        pending.dictation_mode,
+        vocalnotes_lib::domain::DictationTarget::Instructions
+    );
+    assert_eq!(pending.instructions, "Reformater sans ajouter d'idées.");
+    assert!(pending.dictation_transition_pending);
+
+    core.route_dictation_text(target, "Garder le ton concis.".into())
+        .unwrap();
+    let completed = core.snapshot();
+    assert_eq!(
+        completed.dictation_mode,
+        vocalnotes_lib::domain::DictationTarget::Context
+    );
+    assert!(completed.instructions.is_empty());
+    assert!(!completed.dictation_transition_pending);
+    assert_eq!(completed.source, "Note");
+    assert_eq!(completed.llm_requests, 0);
+}
+
 fn frame(n: u8, voiced: bool, end: bool) -> AudioFrame {
     AudioFrame {
         pcm: vec![n; 960],
@@ -204,7 +254,11 @@ fn inserting_adjacent_syntax_cannot_degrade_opaque_rendering() {
 #[test]
 fn close_keeps_controlled_autosave_or_retains_note_on_failure() {
     use vocalnotes_lib::platform::probe::Proposal;
-    let dir = std::env::temp_dir().join(format!("vocalnotes-close-{}", std::process::id()));
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("vocalnotes-close-{}-{nonce}", std::process::id()));
     std::fs::create_dir(&dir).unwrap();
     let original = dir.join("original.md");
     let mut core = Probe::new("avant".into());
@@ -226,12 +280,24 @@ fn close_keeps_controlled_autosave_or_retains_note_on_failure() {
         .accepted
     );
     assert!(core.request_close());
-    assert_eq!(std::fs::read_to_string(&original).unwrap(), "après");
+    let destination = core.saved_destination().unwrap();
+    assert_eq!(std::fs::read_to_string(&destination).unwrap(), "après");
+    #[cfg(target_os = "linux")]
+    assert_eq!(destination, original);
+    #[cfg(not(target_os = "linux"))]
+    assert_ne!(destination, original);
     let saved: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
+    assert!(saved.contains(&destination));
+    #[cfg(target_os = "linux")]
     assert_eq!(saved.len(), 1);
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert_eq!(saved.len(), 2);
+        assert_eq!(std::fs::read_to_string(&original).unwrap(), "avant");
+    }
     assert!(
         saved
             .iter()

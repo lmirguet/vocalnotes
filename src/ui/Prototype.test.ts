@@ -8,6 +8,7 @@ const styles = readFileSync(new NodeURL("../style.css", import.meta.url), "utf8"
 
 const initial: Snapshot = {
   noteId: 1, manualPeriod: 1, revision: 0, generation: 1, mode: "manual",
+  dictationMode: "content", context: "", instructions: "", dictationTransitionPending: false, inputGeneration: 1,
   source: "bonjour\n\n```rs\nopaque()\n```\n", dirty: false,
   message: "Prototype partiel.", blocks: [
     { from: 0, to: 7, raw: "bonjour", kind: "paragraph" },
@@ -27,6 +28,89 @@ async function setup(invoke: (command: string, args?: Record<string, unknown>) =
 }
 
 describe("prototype natif partiel", () => {
+  it("permet l'édition du contexte en permanence et masque les instructions hors de leur mode", async () => {
+    let snapshot = initial;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "prototype_action") {
+        const action = args!.action as { type: string; mode?: Snapshot["dictationMode"]; text?: string };
+        if (action.type === "set_dictation_mode") snapshot = {
+          ...snapshot, mode: "voice", dictationMode: action.mode!,
+        };
+        if (action.type === "set_context") snapshot = { ...snapshot, context: action.text! };
+        if (action.type === "set_instructions") snapshot = { ...snapshot, instructions: action.text! };
+      }
+      return command === "preferences_get" ? preferences : snapshot;
+    });
+    const { root, app } = await setup(invoke);
+    try {
+      const context = root.querySelector<HTMLTextAreaElement>('[data-dictation-field="context"]')!;
+      const editor = root.querySelector<HTMLElement>(".ProseMirror")!;
+      expect(context).not.toBeNull();
+      expect(editor).not.toBeNull();
+      expect(root.querySelector<HTMLTextAreaElement>('[data-dictation-field="instructions"]')
+        ?.closest<HTMLElement>(".instruction-popup")?.hidden).toBe(true);
+
+      context.value = "Réunion du lundi.";
+      context.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("prototype_action", {
+        action: { type: "set_context", text: "Réunion du lundi." },
+      }));
+
+      root.querySelector<HTMLButtonElement>('[data-dictation-mode="instructions"]')!.click();
+      await vi.waitFor(() => expect(root.querySelector<HTMLTextAreaElement>('[data-dictation-field="instructions"]')
+        ?.closest<HTMLElement>(".instruction-popup")?.hidden).toBe(false));
+      const instructions = root.querySelector<HTMLTextAreaElement>('[data-dictation-field="instructions"]')!;
+      instructions.value = "Style concis.";
+      instructions.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("prototype_action", {
+        action: { type: "set_instructions", text: "Style concis." },
+      }));
+      expect(root.querySelector(".ProseMirror")).toBe(editor);
+    } finally { app.destroy(); }
+  });
+
+  it("sélectionne explicitement les trois destinations et expose le mode sélectionné", async () => {
+    let snapshot = initial;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "prototype_action") {
+        const action = args!.action as { type: string; mode: Snapshot["dictationMode"] };
+        snapshot = { ...snapshot, mode: "voice", dictationMode: action.mode };
+      }
+      return command === "preferences_get" ? preferences : snapshot;
+    });
+    const { root, app } = await setup(invoke);
+    try {
+      const modes = ["content", "context", "instructions"] as const;
+      for (const mode of modes) {
+        const control = root.querySelector<HTMLButtonElement>(`[data-dictation-mode="${mode}"]`)!;
+        control.click();
+        await vi.waitFor(() => expect(control.getAttribute("aria-pressed")).toBe("true"));
+        expect(invoke).toHaveBeenCalledWith("prototype_action", {
+          action: { type: "set_dictation_mode", mode },
+        });
+      }
+    } finally { app.destroy(); }
+  });
+
+  it("garde Instructions sélectionné pendant la finalisation d'un segment en attente", async () => {
+    let snapshot = {
+      ...initial, mode: "voice" as const, listeningState: "listening" as const,
+      dictationMode: "instructions" as const, instructions: "Style concis.",
+    };
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "prototype_action") snapshot = {
+        ...snapshot, mode: "voice", dictationTransitionPending: true,
+      };
+      return command === "preferences_get" ? preferences : snapshot;
+    });
+    const { root, app } = await setup(invoke);
+    try {
+      root.querySelector<HTMLButtonElement>('[data-dictation-mode="context"]')!.click();
+      await vi.waitFor(() => expect(root.querySelector('[data-dictation-mode="instructions"]')?.getAttribute("aria-pressed")).toBe("true"));
+      expect(root.textContent).toContain("transcription en attente");
+    } finally { app.destroy(); }
+  });
+
   it("actualise un avertissement disque sans révision ni remplacement du texte", async () => {
     vi.useFakeTimers();
     let calls = 0;
@@ -55,7 +139,7 @@ describe("prototype natif partiel", () => {
       "Précision demandée ; aucune action appliquée.");
     app.destroy();
   });
-  it("affiche menus WordPad, éditeur et bloc opaque sans activer de micro", async () => {
+  it("affiche menus et éditeur sans démarrer de mode automatiquement", async () => {
     const { root, invoke, app } = await setup();
     const nav = root.querySelector('nav[aria-label="Menus"]')!;
     const triggers = [...nav.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")];
@@ -74,7 +158,10 @@ describe("prototype natif partiel", () => {
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["prototype_snapshot", undefined], ["preferences_get", undefined],
     ]);
-    expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')?.disabled).toBe(true);
+    expect(root.textContent).toContain("Microphone arrêté — aucun mode sélectionné");
+    expect(root.querySelector<HTMLButtonElement>('[data-dictation-mode="content"]')?.getAttribute("aria-pressed")).toBe("false");
+    expect(root.querySelector('[data-consent="voice"]')).toBeNull();
+    expect(root.querySelector('[data-action="start"]')).toBeNull();
     app.destroy();
   });
 
@@ -129,7 +216,7 @@ describe("prototype natif partiel", () => {
     expect(key(path, "ArrowRight")).toBe(true); // text caret remains native
     expect(key(path, "Tab")).toBe(true); // no trap or menuitem semantics
     expect(document.activeElement).toBe(path);
-    const outside = root.querySelector<HTMLInputElement>('[data-consent="voice"]')!;
+    const outside = root.querySelector<HTMLTextAreaElement>('[data-dictation-field="context"]')!;
     outside.focus();
     expect(triggers[0]!.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(outside);
@@ -139,8 +226,11 @@ describe("prototype natif partiel", () => {
     expect(document.activeElement).toBe(outside);
   });
 
-  it("applique les règles CSS horizontales et superposées, sans panneaux toujours visibles", async () => {
-    const { root, app } = await setup();
+  it("applique le shell compact, les icônes et la popup d'instruction sans bordure", async () => {
+    const { root, app } = await setup(async command =>
+      command === "prototype_action"
+        ? { ...initial, mode: "voice", dictationMode: "instructions" }
+        : initial);
     const style = document.createElement("style");
     style.textContent = styles;
     document.head.append(style);
@@ -155,6 +245,13 @@ describe("prototype natif partiel", () => {
       expect(getComputedStyle(panel).position).toBe("absolute");
       expect(getComputedStyle(panel).display).not.toBe("none");
       expect(getComputedStyle(panel).zIndex).toBe("10");
+      root.querySelector<HTMLButtonElement>('[data-dictation-mode="instructions"]')!.click();
+      const popup = root.querySelector<HTMLElement>(".instruction-popup")!;
+      await vi.waitFor(() => expect(popup.hidden).toBe(false));
+      expect(getComputedStyle(popup).position).toBe("absolute");
+      expect(getComputedStyle(popup).borderTopWidth).toBe("0px");
+      expect(getComputedStyle(popup).zIndex).toBe("20");
+      expect(getComputedStyle(root.querySelector(".mode-icon")!).width).toBe("16px");
     } finally { style.remove(); app.destroy(); }
   });
 
@@ -203,13 +300,13 @@ describe("prototype natif partiel", () => {
     app.destroy();
   });
 
-  it("aucune édition ni annulation vocale dans une projection read-only", async () => {
+  it("garde l'édition disponible pendant la capture sans afficher de commandes vocales", async () => {
     const { root, app, invoke } = await setup(vi.fn(async () => ({ ...initial, mode: "voice" })));
     // Locate by label, not DOM text presence alone.
     const trigger = [...root.querySelectorAll<HTMLButtonElement>("nav button[aria-expanded]")]
       .find(b => b.textContent === "Édition")!;
     trigger.click();
-    expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("false");
+    expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("true");
     expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>('[data-action="redo"]')?.disabled).toBe(true);
     root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.click();
@@ -217,7 +314,7 @@ describe("prototype natif partiel", () => {
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["prototype_snapshot", undefined], ["preferences_get", undefined],
     ]);
-    expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-action="start"]')).toBeNull();
     app.destroy();
   });
 
@@ -239,10 +336,12 @@ describe("prototype natif partiel", () => {
     expect(proposals).toHaveLength(1);
     expect(root.textContent).toContain("projection en attente");
     expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(true);
-    expect(root.querySelector<HTMLButtonElement>('[data-action="start"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-action="start"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-action="save"]')!.click();
     root.querySelector<HTMLButtonElement>('[data-action="close"]')!.click();
-    expect(invoke.mock.calls.some(call => call[0] === "prototype_action")).toBe(false);
+    expect(invoke.mock.calls.filter(call => call[0] === "prototype_action"
+      && (call[1] as { action?: { type?: string } } | undefined)?.action?.type !== "set_dictation_mode"))
+      .toHaveLength(0);
     expect(invoke.mock.calls.some(call => call[0] === "prototype_finish_close")).toBe(false);
     pending[0]!({ accepted: true, transactionId: proposals[0]!.transactionId, message: "OK",
       snapshot: { ...simple, revision: 1, source: "ab", dirty: true, blocks: [{ from: 0, to: 2, raw: "ab", kind: "paragraph" }] } });
@@ -274,20 +373,15 @@ describe("prototype natif partiel", () => {
     app.destroy();
   });
 
-  it("démarre uniquement sur accord contextualisé puis action explicite", async () => {
+  it("ne demande pas de consentement ni de démarrage au lancement", async () => {
     const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) =>
       command === "preferences_get" ? preferences : initial);
     const { root, app } = await setup(invoke);
-    const consent = root.querySelector<HTMLInputElement>('[data-consent="voice"]')!;
-    expect(consent).not.toBeNull();
-    consent.checked = true;
-    consent.dispatchEvent(new Event("change"));
-    expect(invoke.mock.calls).toEqual([
-      ["prototype_snapshot", undefined], ["preferences_get", undefined],
-    ]);
-    root.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("prototype_action",
-      { action: { type: "start", consent: true, resume: false } }));
+    expect(root.querySelector('[data-consent="voice"]')).toBeNull();
+    expect(root.querySelector('[data-action="start"]')).toBeNull();
+    expect(root.querySelector('[data-action="pause"]')).toBeNull();
+    expect(invoke).not.toHaveBeenCalledWith("prototype_action", expect.anything());
+    expect(root.textContent).toContain("Microphone arrêté — aucun mode sélectionné");
     app.destroy();
   });
 

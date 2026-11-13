@@ -234,6 +234,22 @@ impl MarkdownFile {
     }
 }
 
+#[cfg(windows)]
+fn open_directory(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+}
+
+#[cfg(not(windows))]
+fn open_directory(path: &Path) -> io::Result<File> {
+    File::open(path)
+}
+
 struct Directory {
     path: PathBuf,
     file: File,
@@ -337,7 +353,8 @@ impl Directory {
                     return Err(SaveError::new("Lien symbolique refusé."));
                 }
             }
-            let file = File::open(parent).map_err(|_| SaveError::new("Dossier inaccessible."))?;
+            let file =
+                open_directory(parent).map_err(|_| SaveError::new("Dossier inaccessible."))?;
             Ok(Self {
                 path: parent.into(),
                 file,

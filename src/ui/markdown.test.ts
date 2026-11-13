@@ -1,15 +1,31 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { EditorState } from "prosemirror-state";
+import { defaultMarkdownSerializer } from "prosemirror-markdown";
 import { createNoteView, documentFor, schema } from "./NoteView";
 import type { Snapshot } from "./DesktopShell";
 
 function snapshot(raw: string, kind = "paragraph"): Snapshot {
   return { noteId: 1, manualPeriod: 1, revision: 0, generation: 1, mode: "manual",
+    dictationMode: "content", context: "", instructions: "", dictationTransitionPending: false, inputGeneration: 1,
     source: raw, dirty: false, message: "", blocks: [{ from: 0, to: new TextEncoder().encode(raw).length, raw, kind }] };
 }
 
 describe("rendu Markdown sans contenu actif", () => {
+  it("préserve les titres, le gras et l'italique au chargement et à la sérialisation", () => {
+    const raw = "# Titre\n\n**gras** et *italique*";
+    const state = snapshot(raw);
+    state.blocks = [
+      { from: 0, to: 7, raw: "# Titre", kind: "heading" },
+      { from: 9, to: raw.length, raw: "**gras** et *italique*", kind: "paragraph" },
+    ];
+    const doc = documentFor(state);
+    expect(doc.child(0)!.type.name).toBe("heading");
+    expect(doc.child(1)!.firstChild!.marks.map(mark => mark.type.name)).toEqual(["strong"]);
+    expect(doc.child(1)!.lastChild!.marks.map(mark => mark.type.name)).toEqual(["em"]);
+    expect(defaultMarkdownSerializer.serialize(doc)).toBe(raw);
+  });
+
   it.each([
     '[lien](javascript:alert%281%29)', '[lien](https://example.test/)',
     '![image](https://example.test/tracker.png)', '![image](file:///tmp/private.png)',
