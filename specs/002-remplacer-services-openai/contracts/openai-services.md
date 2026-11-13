@@ -57,8 +57,13 @@ Attendre `session.created`, puis envoyer :
 ```
 
 Attendre `session.updated` et contrôler le type de session, le modèle, la
-fréquence, le délai et la désactivation du VAD serveur. Une valeur contradictoire
-ou un acquittement absent est une erreur de configuration.
+fréquence et la désactivation du VAD serveur. Le modèle doit correspondre
+exactement à celui demandé. Le délai acquitté peut être absent ou être l'un des
+enum documentés `minimal`, `low`, `medium`, `high` ou `xhigh`; toute autre valeur
+est une erreur de configuration. Signaler dans le diagnostic expurgé si le délai
+est absent ou différent de `minimal`, sans journaliser sa valeur. L'acquittement
+`session.updated` reste obligatoire et aucun audio ne peut être envoyé avant sa
+validation.
 
 - Ne pas envoyer `language:"fr"` : détection automatique requise.
 - Ne pas envoyer de `prompt` à ce modèle.
@@ -104,6 +109,7 @@ Pas de `input_audio.end`, `transcription.done` ou autre événement Mistral.
 | `conversation.item.input_audio_transcription.completed` | Lire `transcript`, accepter une seule fois après commit acquitté pour le même item |
 | `conversation.item.input_audio_transcription.failed` | Échec de reconnaissance explicite, aucun passage au LLM |
 | `error` | Échec classé, aucun effet métier |
+| `conversation.item.added` / `conversation.item.created` / `conversation.item.done` | Auxiliaire : ignorer sans lire ni conserver l'item ; ne remplace aucun acquittement ni résultat |
 | Événement auxiliaire connu | Ignorer sans conserver son contenu |
 | JSON invalide, type absent ou identité contradictoire | Erreur de protocole explicite |
 
@@ -111,6 +117,16 @@ Une matrice de tests couvre le delta avant acquittement de commit, plusieurs
 deltas par item, identité contradictoire, doublon de final, erreur distante,
 déconnexion et résultat périmé. Les identifiants sont validés et bornés ;
 aucun identifiant distant ne donne l'autorité d'appliquer une édition.
+
+`conversation.item.added` est un événement serveur officiel, notamment émis après
+commit du buffer audio ([référence OpenAI](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.added)).
+Il peut être ignoré pendant l'attente de configuration et pendant le streaming ;
+`session.updated`, le commit acquitté et le final corrélé restent obligatoires.
+
+`conversation.item.done` signale la finalisation d'un item de conversation
+([référence OpenAI](https://developers.openai.com/api/reference/resources/realtime/server-events#conversation.item.done)),
+pas la finalisation de sa transcription. Son contenu est ignoré de la même façon ;
+seul `conversation.item.input_audio_transcription.completed` fournit le final STT.
 
 `completed` fournit le texte complet ; ne pas lui concaténer une seconde fois
 les deltas. Un final vide ne déclenche pas d'interprétation ordinaire.

@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "dialogue-core@ai-fundamentals-marketplace": false,
+    "dialogue-data-fs@ai-fundamentals-marketplace": false,
+    "aif-swm-fabric@ai-fundamentals-marketplace": false
+  }
+}
