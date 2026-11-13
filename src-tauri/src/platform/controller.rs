@@ -4,16 +4,17 @@ use super::{
     probe::{Probe, Ticket},
     session_devices::{CaptureStream, NativeDevices, SessionDevices, StopCapture},
 };
-use crate::adapters::openai_interpreter::OpenAiInterpreter;
 #[cfg(test)]
 use crate::audio::capture::NativeCapture;
 use crate::audio::normalization::AudioFrame;
 use crate::audio::openai_pcm::OpenAiPcm;
 use crate::config::preferences::{ModelPreferences, Preferences, PreferencesStore};
+use crate::domain::DictationTarget;
+use crate::ports::stt::LiveStt;
 use crate::ports::stt::SttEvent;
-use crate::ports::{
-    interpreter::{Interpreter, Interruption},
-    stt::LiveStt,
+use crate::{
+    adapters::openai_interpreter::OpenAIInterpreter, app::drafting::ReformatRequest,
+    domain::note::Snapshot,
 };
 use std::sync::{
     Arc, Mutex,
@@ -28,10 +29,12 @@ struct Active {
     capture: Option<Arc<dyn StopCapture>>,
     ticket: Ticket,
     opening_stop: Arc<AtomicBool>,
+    completed: watch::Receiver<Option<Result<(), &'static str>>>,
 }
 
 struct Finalized {
     passage_id: u64,
+    target: DictationTarget,
     text: String,
     speech_started_at_epoch_us: Option<u64>,
     speech_ended_at_epoch_us: Option<u64>,
@@ -41,8 +44,17 @@ struct Finalized {
 pub struct Controller {
     pub core: Arc<Mutex<Probe>>,
     active: Arc<Mutex<Option<Active>>>,
+    mode_transition: Arc<tokio::sync::Mutex<()>>,
     preferences: Arc<Mutex<Result<PreferencesStore, &'static str>>>,
     frozen_models: Arc<Mutex<Option<ModelPreferences>>>,
+    reformat_busy: Arc<AtomicBool>,
+}
+
+struct ReformatGuard(Arc<AtomicBool>);
+impl Drop for ReformatGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 impl Controller {
@@ -60,8 +72,10 @@ impl Controller {
         Self {
             core: Arc::new(Mutex::new(core)),
             active: Arc::new(Mutex::new(None)),
+            mode_transition: Arc::new(tokio::sync::Mutex::new(())),
             preferences: Arc::new(Mutex::new(preferences)),
             frozen_models: Arc::new(Mutex::new(None)),
+            reformat_busy: Arc::new(AtomicBool::new(false)),
         }
     }
     pub fn preferences(&self) -> Result<Preferences, &'static str> {
@@ -126,6 +140,42 @@ impl Controller {
         }
     }
 
+    pub async fn reformat(
+        &self,
+        note_id: u64,
+        base_revision: u64,
+    ) -> Result<Snapshot, &'static str> {
+        if self
+            .reformat_busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err("Une reformulation est déjà en cours.");
+        }
+        let _busy = ReformatGuard(self.reformat_busy.clone());
+        let request = {
+            let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+            let request = ReformatRequest::prepare(&core, note_id, base_revision)?;
+            core.reformat_started();
+            request
+        };
+        let result: Result<Snapshot, &'static str> = async {
+            let selection = self.preferences()?.llm;
+            let interpreter = OpenAIInterpreter::selected(&selection)?;
+            let reply = request.reformat(&interpreter).await?;
+            let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+            reply.commit(&mut core)?;
+            Ok(core.snapshot())
+        }
+        .await;
+        if let Err(message) = &result {
+            if let Ok(mut core) = self.core.lock() {
+                core.message(message);
+            }
+        }
+        result
+    }
+
     pub fn stop(&self, pause: bool, message: &str) {
         crate::diagnostics::event(if pause {
             "Commande : pause"
@@ -177,6 +227,7 @@ impl Controller {
         }
     }
 
+    #[cfg(test)]
     fn finish_device(&self, ticket: &Ticket) {
         if let Ok(mut active) = self.active.lock() {
             if active
@@ -198,6 +249,100 @@ impl Controller {
         self.start_with_devices(resume, NativeDevices)
     }
 
+    pub async fn set_dictation_mode(
+        &self,
+        target: DictationTarget,
+    ) -> Result<Snapshot, &'static str> {
+        self.set_dictation_mode_with_devices(target, NativeDevices)
+            .await
+    }
+
+    async fn stop_active_mode(&self, message: &'static str) -> Result<bool, &'static str> {
+        let active = {
+            let active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
+            active.as_ref().map(|session| {
+                (
+                    session.capture.clone(),
+                    session.cancel.clone(),
+                    session.opening_stop.clone(),
+                    session.completed.clone(),
+                )
+            })
+        };
+        let Some((capture, cancel, opening_stop, mut completed)) = active else {
+            return Ok(false);
+        };
+        if let Some(capture) = capture {
+            capture.stop();
+        } else {
+            opening_stop.store(true, Ordering::Release);
+            let _ = cancel.send(true);
+        }
+        if completed.borrow().is_none() {
+            completed
+                .changed()
+                .await
+                .map_err(|_| "Arrêt du microphone non confirmé.")?;
+        }
+        match *completed.borrow() {
+            Some(Ok(())) => {}
+            Some(Err(message)) => return Err(message),
+            None => return Err("Arrêt du microphone non confirmé."),
+        }
+        self.stop(false, message);
+        Ok(true)
+    }
+
+    pub async fn set_dictation_mode_with_devices<D: SessionDevices>(
+        &self,
+        target: DictationTarget,
+        devices: D,
+    ) -> Result<Snapshot, &'static str> {
+        let _transition = self.mode_transition.lock().await;
+        let has_active = {
+            let active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
+            active.is_some()
+        };
+        let current = self
+            .core
+            .lock()
+            .map_err(|_| "Cœur indisponible.")?
+            .snapshot();
+        if current.mode == "voice" && current.dictation_mode == target {
+            if !self
+                .stop_active_mode("Écoute arrêtée ; aucun mode sélectionné.")
+                .await?
+            {
+                self.stop(false, "Écoute arrêtée ; aucun mode sélectionné.");
+            }
+            self.core
+                .lock()
+                .map_err(|_| "Cœur indisponible.")?
+                .set_dictation_mode(DictationTarget::Content);
+            return Ok(self
+                .core
+                .lock()
+                .map_err(|_| "Cœur indisponible.")?
+                .snapshot());
+        }
+        if has_active {
+            self.stop_active_mode("Mode modifié ; le passage en attente a été finalisé.")
+                .await?;
+        }
+        {
+            self.core
+                .lock()
+                .map_err(|_| "Cœur indisponible.")?
+                .set_dictation_mode(target);
+        }
+        self.start_with_devices(false, devices)?;
+        Ok(self
+            .core
+            .lock()
+            .map_err(|_| "Cœur indisponible.")?
+            .snapshot())
+    }
+
     /// Rust-only dependency injection; the production IPC always selects NativeDevices.
     pub fn start_with_devices<D: SessionDevices>(
         &self,
@@ -216,12 +361,14 @@ impl Controller {
         );
         let ticket = core.ticket();
         let (cancel, receiver) = watch::channel(false);
+        let (completed_tx, completed_rx) = watch::channel(None);
         let opening_stop = Arc::new(AtomicBool::new(false));
         *active = Some(Active {
             cancel,
             capture: None,
             ticket: ticket.clone(),
             opening_stop: opening_stop.clone(),
+            completed: completed_rx,
         });
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -231,8 +378,20 @@ impl Controller {
             if let Err(message) = result {
                 this.stop_current(&ticket, false, message, true);
             }
+            this.finish_session(&ticket);
+            let _ = completed_tx.send(Some(result));
         });
         Ok(())
+    }
+
+    fn finish_session(&self, ticket: &Ticket) {
+        if let Ok(mut active) = self.active.lock()
+            && active
+                .as_ref()
+                .is_some_and(|session| session.ticket.same_generation(ticket))
+        {
+            active.take();
+        }
     }
 
     fn update(&self, ticket: &Ticket, f: impl FnOnce(&mut Probe)) {
@@ -302,27 +461,18 @@ impl Controller {
         });
         let (frames_tx, frames_rx) = mpsc::channel(128); // 3.84s + native queue; no silent drop.
         let (final_tx, final_rx) = mpsc::channel(4);
-        let (priority_tx, priority_rx) = watch::channel(None);
         let work = async {
             tokio::try_join!(
                 capture_frames(capture, frames_tx),
                 async {
-                    self.transcribe(&ticket, frames_rx, final_tx, priority_tx, transcription)
+                    self.transcribe(&ticket, frames_rx, final_tx, transcription)
                         .await
                         .map_err(|reason| {
                             self.update(&ticket, |core| core.failure_stage("recognition"));
                             reason
                         })
                 },
-                self.interpret(&ticket, final_rx, &models.llm),
-                async {
-                    self.priority(&ticket, priority_rx, &models.llm)
-                        .await
-                        .map_err(|reason| {
-                            self.update(&ticket, |core| core.failure_stage("interpretation"));
-                            reason
-                        })
-                },
+                self.route_finalized(&ticket, final_rx),
             )?;
             Ok(())
         };
@@ -354,12 +504,12 @@ impl Controller {
         ticket: &Ticket,
         mut frames: mpsc::Receiver<AudioFrame>,
         finals: mpsc::Sender<Finalized>,
-        priority: watch::Sender<Option<String>>,
         mut stream: S,
     ) -> Result<(), &'static str> {
         let mut gate = PassageGate::default();
         let mut converter = None;
         let mut passage_id = 0;
+        let mut target_at_start = DictationTarget::Content;
         let mut speech_started_at_epoch_us = None;
         loop {
             // Read events continuously while feeding audio; normal LLM work is independent.
@@ -369,21 +519,32 @@ impl Controller {
                         SttEvent::Final { .. } => return Err("Final STT prématuré ; passage non intégré."),
                         SttEvent::Provisional(text) => {
                             self.update(ticket, |c| c.transcript_delta(&text));
-                            append_provisional(&priority, &text)?;
                         }
                         SttEvent::Other => {}
                     }
                 }
                 frame = frames.recv() => {
-                    let frame = frame.ok_or("Capture interrompue ; passage non intégré.")?;
-                    match gate.push(frame)? {
+                    let step = match frame {
+                        Some(frame) => gate.push(frame)?,
+                        None => match gate.finish() {
+                            Some(step) => step,
+                            None => return Ok(()),
+                        },
+                    };
+                    match step {
                         PassageStep::Wait => {}
                         PassageStep::Start { pcm, speech_started_at_epoch_us: started_at } => {
                             crate::diagnostics::event("STT : début de passage détecté par VAD");
                             passage_id += 1;
+                            target_at_start = {
+                                let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+                                if !core.same_session(ticket) {
+                                    return Ok(());
+                                }
+                                core.begin_dictation_segment()?
+                            };
                             speech_started_at_epoch_us = started_at;
                             self.update(ticket, |c| c.speech_passage_started(passage_id, started_at));
-                            priority.send_replace(Some(String::new()));
                             self.update(ticket, |c| c.measure("stt", 1, ""));
                             stream.begin_passage()?;
                             let mut resampler = OpenAiPcm::new()?;
@@ -422,21 +583,20 @@ impl Controller {
                                         self.update(ticket, |c| c.transcript_done(&text));
                                         finals.try_send(Finalized {
                                             passage_id,
+                                            target: target_at_start,
                                             text,
                                             speech_started_at_epoch_us,
                                             speech_ended_at_epoch_us,
-                                        }).map_err(|_| "Saturation interprétation : passages non intégrés, arrêt sans spool.")?;
+                                        }).map_err(|_| "Saturation du routage : passages non intégrés, arrêt sans spool.")?;
                                         break;
                                     }
                                     SttEvent::Provisional(text) => {
                                         self.update(ticket, |c| c.transcript_delta(&text));
-                                        append_provisional(&priority, &text)?;
                                     },
                                     SttEvent::Other => {}
                                 }
                             }
                             converter = None;
-                            priority.send_replace(None);
                         }
                     }
                 }
@@ -444,137 +604,36 @@ impl Controller {
         }
     }
 
-    async fn interpret(
+    async fn route_finalized(
         &self,
         session: &Ticket,
         mut finals: mpsc::Receiver<Finalized>,
-        selection: &crate::config::preferences::ServiceSelection,
     ) -> Result<(), &'static str> {
-        let interpreter = OpenAiInterpreter::selected(selection)?;
-        let mut sequence = 0;
         while let Some(Finalized {
             passage_id,
+            target,
             text,
             speech_started_at_epoch_us,
             speech_ended_at_epoch_us,
         }) = finals.recv().await
         {
-            if text.trim().is_empty() {
-                crate::diagnostics::event("STT : final vide ignoré, aucun appel LLM ordinaire");
-                continue;
+            {
+                let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+                if !core.same_session(session) {
+                    return Ok(());
+                }
+                core.route_dictation_text(target, text.clone())?;
+                if !text.trim().is_empty() {
+                    core.speech_passage_applied(
+                        passage_id,
+                        speech_started_at_epoch_us,
+                        speech_ended_at_epoch_us,
+                    );
+                }
             }
-            let request = {
-                let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
-                if !core.same_session(session) {
-                    return Ok(());
-                }
-                sequence += 1;
-                let request =
-                    crate::app::drafting::DraftingRequest::prepare(&mut core, sequence, passage_id)
-                        .map_err(|stage| {
-                            core.failure_stage("application");
-                            stage.message()
-                        })?;
-                core.measure("llm", 1, "");
-                core.processing();
-                core.message("Traitement du passage finalisé — aucune édition sur provisoire.");
-                request
-            };
-            let llm_started = Instant::now();
-            let reply = request
-                .interpret(&interpreter, &text)
-                .await
-                .map_err(|stage| {
-                    self.update(session, |core| {
-                        core.failure_stage(match stage {
-                            crate::app::drafting::FailureStage::Recognition => "recognition",
-                            crate::app::drafting::FailureStage::Interpretation => "interpretation",
-                            crate::app::drafting::FailureStage::Application => "application",
-                        })
-                    });
-                    stage.message()
-                })?;
-            let terminal = {
-                let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
-                if !core.same_session(session) {
-                    return Ok(());
-                }
-                core.measure("llm_model", 0, &reply.model);
-                core.measure("llm_ms", llm_started.elapsed().as_millis() as u64, "");
-                let before = core.snapshot();
-                let commit_started = Instant::now();
-                match reply.commit(&mut core) {
-                    Ok(()) => {
-                        if core.snapshot().source != before.source {
-                            core.speech_passage_applied(
-                                passage_id,
-                                speech_started_at_epoch_us,
-                                speech_ended_at_epoch_us,
-                            );
-                        }
-                        if core.snapshot().message == before.message {
-                            core.message("Passage finalisé traité ; écoute continue.");
-                        }
-                    }
-                    Err(failure) => {
-                        core.failure_stage("application");
-                        core.message(failure.reason);
-                    }
-                }
-                let mode = core.snapshot().mode;
-                core.measure("commit_us", commit_started.elapsed().as_micros() as u64, "");
-                (mode != "voice").then_some(mode == "paused")
-            };
             self.remember_saved_note();
-            if terminal.is_some() {
-                // Core already invalidated; physical capture/cancellation must still stop.
-                self.finish_device(session);
-                return Ok(());
-            }
         }
-        Err("Interprétation interrompue.")
-    }
-
-    async fn priority(
-        &self,
-        ticket: &Ticket,
-        mut receiver: watch::Receiver<Option<String>>,
-        selection: &crate::config::preferences::ServiceSelection,
-    ) -> Result<(), &'static str> {
-        let interpreter = OpenAiInterpreter::selected(selection)?;
-        loop {
-            receiver
-                .changed()
-                .await
-                .map_err(|_| "Voie prioritaire interrompue.")?;
-            // Coalesce latest provisional: one in flight, no backlog, no keyword gating.
-            sleep(Duration::from_millis(750)).await;
-            let text = receiver.borrow_and_update().clone();
-            let Some(text) = text.filter(|s| !s.trim().is_empty()) else {
-                continue;
-            };
-            self.update(ticket, |c| c.measure("priority", 1, ""));
-            let priority_started = Instant::now();
-            let action = Interpreter::interpret_interruption(&interpreter, &text).await?;
-            crate::diagnostics::event(match action {
-                Interruption::None => "Priorité : aucune interruption demandée",
-                Interruption::Pause => "Priorité : pause demandée",
-                Interruption::Stop => "Priorité : arrêt demandé",
-                Interruption::Manual => "Priorité : manuel demandé",
-            });
-            self.update(ticket, |c| {
-                c.measure(
-                    "priority_ms",
-                    priority_started.elapsed().as_millis() as u64,
-                    "",
-                )
-            });
-            if action != Interruption::None {
-                self.stop_current(ticket, action == Interruption::Pause,
-                    "Interruption prioritaire ; micro arrêté, passages en attente non intégrés, reprise explicite.", false);
-                return Ok(());
-            }
-        }
+        Ok(())
     }
 }
 
@@ -588,22 +647,13 @@ async fn capture_frames(
                 |_| "Saturation rotation audio : arrêt, passages non intégrés ; aucun spool.",
             )?;
         }
+        if capture.is_finished() {
+            return Ok(());
+        }
         sleep(Duration::from_millis(5)).await;
     }
 }
 
-fn append_provisional(
-    sender: &watch::Sender<Option<String>>,
-    delta: &str,
-) -> Result<(), &'static str> {
-    let mut text = sender.borrow().clone().unwrap_or_default();
-    if text.len() + delta.len() > 4096 {
-        return Err("Limite du provisoire atteinte ; arrêt explicite sans édition partielle.");
-    }
-    text.push_str(delta);
-    sender.send_replace(Some(text));
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,6 +669,7 @@ mod tests {
             capture: None,
             ticket: ticket.clone(),
             opening_stop: flag.clone(),
+            completed: watch::channel(None).1,
         });
         (ticket, receiver, flag)
     }
@@ -649,16 +700,6 @@ mod tests {
         controller.stop(false, "fin du test");
     }
 
-    #[test]
-    fn priority_coalesces_without_a_replay_queue_and_bounds_provisional() {
-        let (sender, receiver) = watch::channel(Some(String::new()));
-        append_provisional(&sender, "mets en ").unwrap();
-        append_provisional(&sender, "pause").unwrap();
-        assert_eq!(receiver.borrow().as_deref(), Some("mets en pause"));
-        assert!(append_provisional(&sender, &"x".repeat(4096)).is_err());
-        sender.send_replace(None);
-        assert!(receiver.borrow().is_none());
-    }
     #[tokio::test]
     async fn service_failure_supervisor_invalidates_and_cancellation_drops_pending_work() {
         let controller = Controller::new(Probe::new("note".into()));
@@ -690,6 +731,7 @@ mod tests {
         events: mpsc::Receiver<SttEvent>,
         sender: mpsc::Sender<SttEvent>,
         starts: Arc<std::sync::atomic::AtomicUsize>,
+        fail_end: bool,
     }
     impl crate::ports::stt::SttInput for Stream {
         async fn append_pcm(&mut self, _: &[u8]) -> Result<(), &'static str> {
@@ -698,6 +740,9 @@ mod tests {
                 .map_err(|_| "test queue full")
         }
         async fn end_passage(&mut self) -> Result<(), &'static str> {
+            if self.fail_end {
+                return Err("Finalisation STT synthétique impossible.");
+            }
             self.sender
                 .try_send(SttEvent::Final {
                     text: "Texte final.".into(),
@@ -722,6 +767,285 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Default)]
+    struct FakeDevices {
+        captures: Arc<std::sync::atomic::AtomicUsize>,
+        stops: Arc<std::sync::atomic::AtomicUsize>,
+        passage_starts: Arc<std::sync::atomic::AtomicUsize>,
+        frames: Arc<Mutex<std::collections::VecDeque<AudioFrame>>>,
+        fail_capture: bool,
+        fail_finalize: bool,
+    }
+
+    impl FakeDevices {
+        fn push_speech(&self) {
+            self.frames.lock().unwrap().push_back(AudioFrame {
+                pcm: vec![0; 960],
+                voiced: true,
+                end_passage: false,
+                capture_start_epoch_us: Some(1_000_000),
+            });
+        }
+
+        async fn wait_for_captures(&self, expected: usize) {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while self.captures.load(Ordering::SeqCst) < expected {
+                    sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("capture startup timed out");
+        }
+
+        async fn wait_until_listening(&self, controller: &Controller) {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while controller.core.lock().unwrap().snapshot().listening_state != "listening" {
+                    sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("capture readiness timed out");
+        }
+    }
+
+    struct FakeCapture {
+        devices: FakeDevices,
+        stopped: Arc<AtomicBool>,
+    }
+
+    struct FakeCaptureControl {
+        stopped: Arc<AtomicBool>,
+        stops: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl StopCapture for FakeCaptureControl {
+        fn stop(&self) {
+            self.stopped.store(true, Ordering::Release);
+            self.stops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl CaptureStream for FakeCapture {
+        fn control(&self) -> Arc<dyn StopCapture> {
+            Arc::new(FakeCaptureControl {
+                stopped: self.stopped.clone(),
+                stops: self.devices.stops.clone(),
+            })
+        }
+
+        fn next_frame(&self) -> Result<Option<AudioFrame>, &'static str> {
+            Ok(self.devices.frames.lock().unwrap().pop_front())
+        }
+
+        fn is_finished(&self) -> bool {
+            self.stopped.load(Ordering::Acquire) && self.devices.frames.lock().unwrap().is_empty()
+        }
+    }
+
+    impl SessionDevices for FakeDevices {
+        type Transcription = Stream;
+
+        async fn transcription(
+            &self,
+            _: &crate::config::preferences::ServiceSelection,
+        ) -> Result<Self::Transcription, &'static str> {
+            let (sender, events) = mpsc::channel(16);
+            Ok(Stream {
+                events,
+                sender,
+                starts: self.passage_starts.clone(),
+                fail_end: self.fail_finalize,
+            })
+        }
+
+        async fn monitor(
+            &self,
+            _: Arc<AtomicBool>,
+            _: Arc<dyn Fn() + Send + Sync>,
+        ) -> Result<Box<dyn Send>, &'static str> {
+            Ok(Box::new(()))
+        }
+
+        async fn key_present(&self) -> Result<bool, &'static str> {
+            Ok(true)
+        }
+
+        async fn capture(
+            &self,
+            _: Arc<AtomicBool>,
+        ) -> Result<Box<dyn CaptureStream>, &'static str> {
+            if self.fail_capture {
+                return Err("Microphone synthétique indisponible.");
+            }
+            self.captures.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(FakeCapture {
+                devices: self.clone(),
+                stopped: Arc::new(AtomicBool::new(false)),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn selecting_modes_starts_capture_and_drains_a_pending_instruction_passage() {
+        let controller = Controller::new(Probe::new("note originale".into()));
+        let devices = FakeDevices::default();
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Instructions, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(1).await;
+        devices.wait_until_listening(&controller).await;
+        controller
+            .core
+            .lock()
+            .unwrap()
+            .set_instructions("initial".into())
+            .unwrap();
+
+        devices.push_speech();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while devices.passage_starts.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("speech passage did not start");
+
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Content, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(2).await;
+        devices.wait_until_listening(&controller).await;
+        let snapshot = controller.core.lock().unwrap().snapshot();
+        assert_eq!(snapshot.dictation_mode, DictationTarget::Content);
+        assert_eq!(snapshot.voice_applied, 1);
+        assert!(snapshot.instructions.is_empty());
+        assert_eq!(devices.stops.load(Ordering::SeqCst), 1);
+        controller.stop(false, "fin du test");
+    }
+
+    #[tokio::test]
+    async fn selecting_the_active_instruction_mode_stops_capture_after_routing_pending_speech() {
+        let controller = Controller::new(Probe::new("note originale".into()));
+        let devices = FakeDevices::default();
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Instructions, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(1).await;
+        devices.wait_until_listening(&controller).await;
+        controller
+            .core
+            .lock()
+            .unwrap()
+            .set_instructions("initial".into())
+            .unwrap();
+        devices.push_speech();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while devices.passage_starts.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("speech passage did not start");
+
+        let stopped = controller
+            .set_dictation_mode_with_devices(DictationTarget::Instructions, devices.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(stopped.mode, "manual");
+        assert_eq!(stopped.listening_state, "stopped");
+        assert_eq!(stopped.dictation_mode, DictationTarget::Content);
+        assert_eq!(stopped.voice_applied, 1);
+        assert!(stopped.instructions.is_empty());
+        assert_eq!(devices.captures.load(Ordering::SeqCst), 1);
+        assert_eq!(devices.stops.load(Ordering::SeqCst), 1);
+
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Context, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(2).await;
+        devices.wait_until_listening(&controller).await;
+        assert_eq!(
+            controller.core.lock().unwrap().snapshot().dictation_mode,
+            DictationTarget::Context
+        );
+        controller.stop(false, "fin du test");
+    }
+
+    #[tokio::test]
+    async fn automatic_capture_reports_device_failure_and_close_stops_active_capture() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let failing = FakeDevices {
+            fail_capture: true,
+            ..FakeDevices::default()
+        };
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Content, failing)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while controller.core.lock().unwrap().snapshot().voice_activity != "error" {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("capture failure was not surfaced");
+
+        let devices = FakeDevices::default();
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Context, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(1).await;
+        devices.wait_until_listening(&controller).await;
+        controller.stop(false, "fermeture de note");
+        assert_eq!(devices.stops.load(Ordering::SeqCst), 1);
+        assert_eq!(controller.core.lock().unwrap().snapshot().mode, "manual");
+    }
+
+    #[tokio::test]
+    async fn failed_old_passage_does_not_claim_a_successful_mode_transition() {
+        let controller = Controller::new(Probe::new("note originale".into()));
+        let devices = FakeDevices {
+            fail_finalize: true,
+            ..FakeDevices::default()
+        };
+        controller
+            .set_dictation_mode_with_devices(DictationTarget::Instructions, devices.clone())
+            .await
+            .unwrap();
+        devices.wait_for_captures(1).await;
+        devices.wait_until_listening(&controller).await;
+        devices.push_speech();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while devices.passage_starts.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("speech passage did not start");
+
+        assert!(
+            controller
+                .set_dictation_mode_with_devices(DictationTarget::Content, devices.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(devices.captures.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            controller.core.lock().unwrap().snapshot().voice_activity,
+            "error"
+        );
+        assert_eq!(
+            controller.core.lock().unwrap().snapshot().dictation_mode,
+            DictationTarget::Instructions
+        );
+    }
+
     #[tokio::test]
     async fn live_passages_deliver_finals_without_editing_note_or_rotating_connection() {
         let c = Controller::new(Probe::new("note originale".into()));
@@ -732,10 +1056,10 @@ mod tests {
             events: events_rx,
             sender: events_tx,
             starts: starts.clone(),
+            fail_end: false,
         };
         let (frames_tx, frames_rx) = mpsc::channel(128);
         let (final_tx, mut final_rx) = mpsc::channel(4);
-        let (priority_tx, _) = watch::channel(None);
         for _ in 0..2 {
             frames_tx
                 .send(AudioFrame {
@@ -759,7 +1083,7 @@ mod tests {
         let worker = c.clone();
         let handle = tokio::spawn(async move {
             worker
-                .transcribe(&ticket, frames_rx, final_tx, priority_tx, stream)
+                .transcribe(&ticket, frames_rx, final_tx, stream)
                 .await
         });
         for id in 1..=2 {
@@ -768,6 +1092,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(final_text.passage_id, id);
+            assert_eq!(final_text.target, DictationTarget::Content);
             assert_eq!(final_text.text, "Texte final.");
         }
         assert_eq!(starts.load(Ordering::SeqCst), 2);
@@ -818,10 +1143,10 @@ mod tests {
             events,
             sender,
             starts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            fail_end: false,
         };
         let (frames_tx, frames_rx) = mpsc::channel(128);
         let (final_tx, mut finals) = mpsc::channel(4);
-        let (priority_tx, _) = watch::channel(None);
         for _ in 0..5 {
             frames_tx
                 .send(AudioFrame {
@@ -844,11 +1169,11 @@ mod tests {
         }
         let result = tokio::time::timeout(
             Duration::from_secs(2),
-            c.transcribe(&ticket, frames_rx, final_tx, priority_tx, stream),
+            c.transcribe(&ticket, frames_rx, final_tx, stream),
         )
         .await
         .unwrap();
-        assert!(result.err().unwrap().contains("Saturation interprétation"));
+        assert!(result.err().unwrap().contains("Saturation du routage"));
         let mut count = 0;
         while finals.try_recv().is_ok() {
             count += 1;

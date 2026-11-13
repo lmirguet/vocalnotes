@@ -69,6 +69,7 @@ pub fn run() {
             prototype_snapshot,
             prototype_manual,
             prototype_action,
+            prototype_reformat,
             prototype_set_key,
             prototype_delete_key,
             prototype_key_presence,

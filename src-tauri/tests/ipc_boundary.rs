@@ -9,15 +9,18 @@ use vocalnotes_lib::{
 
 #[test]
 fn only_typed_actions_and_bounded_local_markdown_paths_enter_dispatch() {
+    let temp_dir = std::env::temp_dir();
+    let parent_path = temp_dir.join("..").join("a.md");
+    let oversized_path = temp_dir.join(format!("{}.md", "a".repeat(4096)));
     for value in [
         json!({"type":"shell", "command":"touch /tmp/forbidden"}),
         json!({"type":"save", "secret":"synthetic-secret"}),
         json!({"type":"start", "consent":true, "resume":false, "provider":"other"}),
         json!({"type":"open", "path":"https://example.test/a.md"}),
         json!({"type":"open", "path":"../a.md"}),
-        json!({"type":"open", "path":"/tmp/a\0.md"}),
-        json!({"type":"save_copy", "path":"/tmp/../a.md"}),
-        json!({"type":"open", "path":format!("/tmp/{}.md", "a".repeat(4096))}),
+        json!({"type":"open", "path":format!("{}.md\0", temp_dir.join("a").display())}),
+        json!({"type":"save_copy", "path":parent_path.to_string_lossy()}),
+        json!({"type":"open", "path":oversized_path.to_string_lossy()}),
     ] {
         assert!(
             serde_json::from_value::<Command>(value.clone()).is_err(),
@@ -31,9 +34,10 @@ fn only_typed_actions_and_bounded_local_markdown_paths_enter_dispatch() {
         );
     }
     // A path is data, never shell syntax. Ordinary filenames retain their bytes.
+    let harmless_path = temp_dir.join("$(touch forbidden).md");
     assert!(
         serde_json::from_value::<Command>(
-            json!({"type":"open", "path":"/tmp/$(touch forbidden).md"})
+            json!({"type":"open", "path":harmless_path.to_string_lossy()})
         )
         .is_ok()
     );
@@ -57,7 +61,11 @@ fn native_dispatch_refuses_missing_consent_and_failed_open_keeps_note() {
         execute_action(
             &controller,
             Command::Open {
-                path: "/vocalnotes-does-not-exist/note.md".into()
+                path: std::env::temp_dir()
+                    .join(format!("vocalnotes-missing-{}", std::process::id()))
+                    .join("note.md")
+                    .to_string_lossy()
+                    .into_owned()
             }
         )
         .is_err()
@@ -102,7 +110,7 @@ fn capabilities_only_grant_the_registered_local_commands() {
     assert!(capability.get("remote").is_none());
     let commands = include_str!("../src/app/ipc_commands.rs");
     let permissions = capability["permissions"].as_array().unwrap();
-    assert_eq!(permissions.len(), 10);
+    assert_eq!(permissions.len(), 11);
     for permission in permissions {
         let name = permission
             .as_str()

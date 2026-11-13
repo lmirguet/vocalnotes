@@ -24,6 +24,21 @@ pub struct PassageGate {
 }
 
 impl PassageGate {
+    pub fn finish(&mut self) -> Option<PassageStep> {
+        if self.frames == 0 {
+            self.preroll.clear();
+            return None;
+        }
+        self.frames = 0;
+        let speech_ended_at_epoch_us = self.speech_ended_at_epoch_us;
+        self.speech_started_at_epoch_us = None;
+        self.speech_ended_at_epoch_us = None;
+        Some(PassageStep::End {
+            pcm: vec![0; 960],
+            speech_ended_at_epoch_us,
+        })
+    }
+
     pub fn push(&mut self, frame: AudioFrame) -> Result<PassageStep, &'static str> {
         if frame.pcm.len() != 960 {
             return Err("Trame PCM invalide ; passage non intégré.");

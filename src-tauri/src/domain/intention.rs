@@ -30,6 +30,14 @@ impl DraftingIntention {
             context,
         })
     }
+    pub fn with_context(&self, context: String) -> Result<Self, &'static str> {
+        Self::new(
+            self.purpose.clone(),
+            self.form.clone(),
+            self.tone.clone(),
+            context,
+        )
+    }
     pub fn valid_parts(purpose: &str, form: &str, tone: &str, context: &str) -> bool {
         purpose
             .len()

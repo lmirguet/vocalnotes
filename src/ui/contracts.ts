@@ -1,4 +1,5 @@
 export type Block = { from: number; to: number; raw: string; kind: string };
+export type DictationMode = "content" | "context" | "instructions";
 export type Snapshot = {
   noteId: number; manualPeriod: number; revision: number; generation: number;
   sessionId?: number; transcriptPassageId?: number; appliedPassageId?: number;
@@ -10,7 +11,9 @@ export type Snapshot = {
   changeFeedback?: { revision: number; areas: { from: number; to: number;
     kind: "insert" | "replace" | "delete" | "move"; removedCharacters: number }[] } | null;
   failureStage?: "recognition" | "interpretation" | "application" | null;
-  mode: string; source: string; dirty: boolean; message: string; blocks: Block[];
+  mode: string; dictationMode: DictationMode; context: string; instructions: string;
+  dictationTransitionPending: boolean; inputGeneration: number;
+  source: string; dirty: boolean; message: string; blocks: Block[];
   storageMessage?: string;
   preferencesMigrated?: boolean;
   sttRequests?: number; llmRequests?: number; priorityRequests?: number; audioMs?: number;

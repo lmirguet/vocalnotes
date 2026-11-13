@@ -4,7 +4,9 @@ import { TextSelection } from "prosemirror-state";
 import { mountPrototype, type Snapshot } from "./Prototype";
 
 const empty: Snapshot = { noteId: 1, manualPeriod: 1, revision: 0, generation: 1,
-  mode: "manual", source: "", dirty: false, message: "Manuel.",
+  mode: "manual", dictationMode: "content", context: "", instructions: "",
+  dictationTransitionPending: false, inputGeneration: 1,
+  source: "", dirty: false, message: "Manuel.",
   blocks: [{ from: 0, to: 0, raw: "", kind: "paragraph" }] };
 type Proposal = { transactionId: string; baseRevision: number;
   patches: Array<{ from: number; to: number; expected: string; text: string }> };

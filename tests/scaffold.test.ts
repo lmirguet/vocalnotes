@@ -36,7 +36,8 @@ describe("frontières du scaffold", () => {
     expect(capability.windows).toEqual(["main"]);
     expect(capability.permissions).toEqual([
       "allow-startup-status", "allow-prototype-snapshot", "allow-prototype-manual",
-      "allow-prototype-action", "allow-prototype-set-key", "allow-prototype-delete-key",
+      "allow-prototype-action", "allow-prototype-reformat",
+      "allow-prototype-set-key", "allow-prototype-delete-key",
       "allow-prototype-key-presence", "allow-prototype-finish-close",
       "allow-preferences-get", "allow-preferences-set",
     ]);

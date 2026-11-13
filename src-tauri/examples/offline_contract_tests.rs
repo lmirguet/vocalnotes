@@ -73,8 +73,5 @@ mod openai_interpreter;
 #[path = "../tests/openai_preferences.rs"]
 mod openai_preferences;
 #[cfg(test)]
-#[path = "../tests/openai_priority.rs"]
-mod openai_priority;
-#[cfg(test)]
 #[path = "../tests/openai_stt.rs"]
 mod openai_stt;

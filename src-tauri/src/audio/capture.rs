@@ -1,4 +1,4 @@
-//! Native CPAL capture. Device opening is explicit and lifecycle guarded.
+//! Native CPAL capture. Mode-triggered device opening remains lifecycle guarded.
 use super::normalization::{AudioFrame, AudioMeter, AudioProcessor};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Producer, RingBuffer};
@@ -28,7 +28,7 @@ pub struct CaptureControl {
 
 impl CaptureControl {
     pub fn stop(&self) {
-        // Callback stops accepting samples immediately; worker drops the stream.
+        // Stop accepting samples; the worker closes the stream before draining queued audio.
         self.status.store(0, Ordering::Release);
         self.stop.store(true, Ordering::Release);
     }
@@ -135,8 +135,7 @@ impl NativeCapture {
             status: self.status.clone(),
         }
     }
-    /// Call ONLY after explicit consent, account selection and verified OS lifecycle guard.
-    /// Nothing in app startup calls this method.
+    /// Legacy explicit-start path; mode-driven sessions use `start_guarded` through the controller.
     pub fn start_explicit() -> Result<Self, &'static str> {
         Self::start_guarded(Arc::new(AtomicBool::new(false)))
     }
@@ -184,6 +183,11 @@ impl NativeCapture {
             4 => Some("Normalisation audio échouée : arrêt requis, passage non intégré."),
             _ => None,
         }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.status.load(Ordering::Acquire) == 0
+            && self.worker.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
     pub fn stop(&mut self) {
@@ -271,7 +275,15 @@ fn run(
     let mut current_marker: Option<CaptureMarker> = None;
     let mut meter = AudioMeter::default();
     let mut reported = Instant::now();
-    while !stop.load(Ordering::Acquire) && status.load(Ordering::Acquire) == 1 {
+    let mut capture = Some(capture);
+    loop {
+        let stopping = stop.load(Ordering::Acquire);
+        if stopping {
+            drop(capture.take());
+        } else if status.load(Ordering::Acquire) != 1 {
+            drop(capture.take());
+            break;
+        }
         while scratch.len() < chunk {
             if current_marker
                 .as_ref()
@@ -313,7 +325,24 @@ fn run(
                 Err(_) => status.store(4, Ordering::Release),
             }
             scratch.clear();
-            scratch_capture_at_epoch_us = None;
+        } else if stopping {
+            if !scratch.is_empty() {
+                meter.observe(&scratch);
+                match processor.push_interleaved_timed(&scratch, scratch_capture_at_epoch_us) {
+                    Ok(packets) => {
+                        for packet in packets {
+                            meter.frame(&packet);
+                            if frames.try_send(packet).is_err() {
+                                status.store(3, Ordering::Release);
+                                break;
+                            }
+                        }
+                    }
+                    Err(_) => status.store(4, Ordering::Release),
+                }
+                scratch.clear();
+            }
+            break;
         } else {
             thread::sleep(Duration::from_millis(2));
         }
@@ -337,7 +366,7 @@ fn run(
             reported = Instant::now();
         }
     }
-    drop(capture); // Stop device BEFORE publishing completion.
+    drop(capture.take()); // Stop device BEFORE publishing completion.
     crate::diagnostics::event("Microphone : flux natif fermé");
     if status.load(Ordering::Acquire) == 1 {
         status.store(0, Ordering::Release);

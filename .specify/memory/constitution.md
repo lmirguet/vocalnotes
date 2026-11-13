@@ -1,12 +1,10 @@
 <!--
-Rapport d'impact : 2.0.0 → 3.0.0.
-Révision majeure : II. Maîtrise par l'utilisateur → II. Deux modes d'édition.
-Retrait de l'annulation en mode vocal et de l'interdiction de modifier un contenu manuel.
-Suppression du principe VI et des sections Place des spécifications et Gouvernance.
-Aucune section ajoutée ; modèles de spécification, plan et tâches inchangés.
-Suivi : aligner le cahier des charges sur les nouvelles règles des deux modes,
-notamment les exigences d'annulation et de protection de l'édition manuelle.
-Version : 3.0.0 ; adoption : 2026-10-30 ; dernière modification : 2026-10-30.
+Rapport d'impact : 4.0.0 → 5.0.0.
+Révision majeure : II. Dictée multimode et contrôle explicite.
+Le mode sélectionné gouverne le cycle de capture ; l'édition manuelle reste
+possible dans chaque mode et les appels LLM sont déclenchés explicitement.
+Les principes de fidélité, d'intégrité des notes et de confidentialité sont conservés.
+Version : 4.0.0 ; adoption : 2026-11-13 ; dernière modification : 2026-11-13.
 -->
 
 # Bloc-notes vocal intelligent — Constitution
@@ -19,14 +17,23 @@ L'application transforme la parole naturelle en notes structurées, sans invente
 de faits ni altérer le sens. Elle distingue le contenu à rédiger des instructions
 d'édition et demande une précision lorsqu'une ambiguïté empêche d'agir correctement.
 
-### II. Deux modes d'édition
+### II. Dictée multimode et contrôle explicite
 
-Le mode vocal est le mode principal et la raison d'être de l'application :
-toutes les actions y sont exprimées à la voix. Les modifications ordinaires s'appliquent sans confirmation
-systématique.
+La dictée possède trois destinations distinctes : contenu de la note, contexte
+et instructions temporaires. Le mode sélectionné détermine la destination et
+le cycle de capture : sa sélection démarre l'écoute pour cette destination, et
+sa fin arrête l'écoute. L'interface n'ajoute pas de commande vocale distincte
+de permission, démarrage, reprise, pause ou arrêt ; elle rend l'état réel et la
+cible de l'écoute visibles, et conserve la divulgation des envois audio.
 
-Après l'arrêt de l'interface vocale, le mode manuel offre un éditeur de texte
-classique avec une commande d'annulation.
+Chaque segment de transcription reste dirigé selon la destination active au
+début de la parole. L'utilisateur peut modifier manuellement le contenu et tout
+champ visible dans chacun des modes, y compris pendant l'écoute, sans affaiblir
+les protections de révision et d'intégrité. Le modèle de langage n'interprète ni
+la dictée ni les changements de mode automatiquement ; il n'est appelé que par
+une action explicite de l'utilisateur. Le contexte est conservé avec sa note ;
+les instructions temporaires sont effacées à la sortie de leur mode, après le
+routage des segments déjà en cours.
 
 ### III. Propriété et intégrité des notes
 

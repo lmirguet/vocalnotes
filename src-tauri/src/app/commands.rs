@@ -1,3 +1,4 @@
+use crate::domain::DictationTarget;
 use crate::platform::{
     controller::Controller,
     probe::{Ack, Proposal, Snapshot},
@@ -30,6 +31,15 @@ pub enum Command {
     },
     Transcript {
         enabled: bool,
+    },
+    SetDictationMode {
+        mode: DictationTarget,
+    },
+    SetContext {
+        text: String,
+    },
+    SetInstructions {
+        text: String,
     },
     Pause {},
     Stop {},
@@ -93,11 +103,24 @@ pub fn prototype_manual(
 }
 
 #[tauri::command]
-pub fn prototype_action(
+pub async fn prototype_action(
     state: State<'_, PrototypeState>,
     action: Command,
 ) -> Result<Snapshot, &'static str> {
-    execute_action(&state.0, action)
+    match action {
+        Command::SetDictationMode { mode } => state.0.set_dictation_mode(mode).await,
+        action => execute_action(&state.0, action),
+    }
+}
+
+#[tauri::command]
+pub async fn prototype_reformat(
+    state: State<'_, PrototypeState>,
+    note_id: u64,
+    base_revision: u64,
+) -> Result<Snapshot, &'static str> {
+    let controller = state.0.clone();
+    controller.reformat(note_id, base_revision).await
 }
 
 pub fn execute_action(controller: &Controller, action: Command) -> Result<Snapshot, &'static str> {
@@ -129,6 +152,9 @@ pub fn execute_action(controller: &Controller, action: Command) -> Result<Snapsh
         Command::Save {} => core.save_current()?,
         Command::CancelClose {} => core.cancel_close(),
         Command::Transcript { enabled } => core.set_transcript_enabled(enabled)?,
+        Command::SetDictationMode { mode } => core.set_dictation_mode(mode),
+        Command::SetContext { text } => core.set_context(text)?,
+        Command::SetInstructions { text } => core.set_instructions(text)?,
         Command::Start { .. } | Command::Pause {} | Command::Stop {} => {}
     }
     let snapshot = core.snapshot();

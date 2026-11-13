@@ -300,94 +300,6 @@ fn failed_or_ambiguous_or_stale_reply_cannot_change_structured_intention() {
     assert_eq!(note.snapshot().source, "Conserver.");
 }
 
-struct ScriptedInterpreter {
-    response: String,
-    fail: bool,
-}
-impl vocalnotes_lib::ports::interpreter::Interpreter for ScriptedInterpreter {
-    async fn interpret_final(
-        &self,
-        _passage: &str,
-        _intention: &vocalnotes_lib::domain::intention::DraftingIntention,
-        _candidates: vocalnotes_lib::ports::interpreter::InterpretationContext,
-    ) -> Result<(vocalnotes_lib::ports::interpreter::Intervention, String), &'static str> {
-        if self.fail {
-            return Err("private synthetic response");
-        }
-        Ok((
-            decode_intervention(&self.response)?,
-            "synthetic-model".into(),
-        ))
-    }
-    async fn interpret_interruption(
-        &self,
-        _: &str,
-    ) -> Result<vocalnotes_lib::ports::interpreter::Interruption, &'static str> {
-        unreachable!("ordinary drafting never invokes the priority interpreter")
-    }
-}
-
-#[tokio::test]
-async fn application_orchestrator_replays_reference_cases_without_a_provider() {
-    use vocalnotes_lib::app::drafting::DraftingRequest;
-    for case in corpus().cases {
-        let mut note = Note::new(case.initial_note.clone());
-        note.start_voice(false).unwrap();
-        for (i, step) in case.steps.iter().enumerate() {
-            let request = DraftingRequest::prepare(&mut note, i as u64 + 1, i as u64 + 1).unwrap();
-            assert_eq!(note.snapshot().voice_activity, "processing");
-            let before = note.snapshot().source;
-            let interpreter = ScriptedInterpreter {
-                response: step.response.to_string(),
-                fail: false,
-            };
-            let reply = request
-                .interpret(&interpreter, &step.transcript)
-                .await
-                .unwrap();
-            assert_eq!(note.snapshot().source, before, "No edit before commit");
-            assert!(reply.commit(&mut note).is_ok());
-            assert_eq!(note.snapshot().source, step.expected_note, "{}", case.id);
-        }
-        assert!(conforms(&case, &note.snapshot().source));
-    }
-}
-
-#[tokio::test]
-async fn drafting_distinguishes_technical_stages_and_refuses_delayed_results() {
-    use vocalnotes_lib::app::drafting::{DraftingRequest, FailureStage};
-    let mut note = Note::new("Note intacte.".into());
-    note.start_voice(false).unwrap();
-    let interpreter = ScriptedInterpreter {
-        response: r#"{"status":"resolved","message":"","actions":[]}"#.into(),
-        fail: true,
-    };
-    let request = DraftingRequest::prepare(&mut note, 1, 1).unwrap();
-    assert!(matches!(
-        request.interpret(&interpreter, " ").await,
-        Err(FailureStage::Recognition)
-    ));
-    let request = DraftingRequest::prepare(&mut note, 2, 2).unwrap();
-    assert!(matches!(
-        request.interpret(&interpreter, "Contenu").await,
-        Err(FailureStage::Interpretation)
-    ));
-    let interpreter = ScriptedInterpreter {
-        fail: false,
-        ..interpreter
-    };
-    let request = DraftingRequest::prepare(&mut note, 3, 3).unwrap();
-    let reply = request.interpret(&interpreter, "Contenu").await.unwrap();
-    note.stop("Manuel");
-    assert!(reply.commit(&mut note).is_err());
-    assert_eq!(note.snapshot().source, "Note intacte.");
-    assert!(matches!(
-        DraftingRequest::prepare(&mut note, 4, 4),
-        Err(FailureStage::Application)
-    ));
-    assert!(!FailureStage::Interpretation.message().contains("private"));
-}
-
 #[test]
 fn accepted_changes_report_real_utf8_ranges_and_no_target_before_commit() {
     let mut note = Note::new("Élodie présente 12 cahiers.".into());
@@ -519,13 +431,14 @@ fn note_intention_survives_stop_restart_and_file_reopen_without_entering_body() 
         !note.snapshot().dirty,
         "metadata-only changes autosave when a destination exists"
     );
+    let saved_path = note.saved_destination().unwrap();
     note.stop("Manuel");
     assert_eq!(note.drafting_intention().tone(), "cordial");
     note.start_voice(false).unwrap();
     assert_eq!(note.drafting_intention().form(), "e-mail");
     note.stop("Manuel");
     let mut reopened = Note::new(String::new());
-    reopened.open(&path).unwrap();
+    reopened.open(&saved_path).unwrap();
     assert_eq!(reopened.snapshot().source, "Texte de la note.\r\n");
     assert_eq!(
         reopened.drafting_intention().purpose(),
@@ -533,66 +446,106 @@ fn note_intention_survives_stop_restart_and_file_reopen_without_entering_body() 
     );
     reopened.start_voice(false).unwrap();
     assert_eq!(reopened.drafting_intention().tone(), "cordial");
-    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(saved_path).unwrap();
+}
+
+struct FixedReformatter {
+    response: &'static str,
+    seen: std::sync::Mutex<Option<vocalnotes_lib::ports::interpreter::ReformatInput>>,
+}
+
+impl vocalnotes_lib::ports::interpreter::Reformatter for FixedReformatter {
+    async fn reformat(
+        &self,
+        input: vocalnotes_lib::ports::interpreter::ReformatInput,
+    ) -> Result<(vocalnotes_lib::ports::interpreter::ReformatOutput, String), &'static str> {
+        *self.seen.lock().unwrap() = Some(input);
+        Ok((
+            vocalnotes_lib::ports::interpreter::decode_reformat(self.response)?,
+            "synthetic-model".into(),
+        ))
+    }
 }
 
 #[tokio::test]
-async fn changing_existing_email_intention_updates_profile_without_losing_reservation() {
-    use vocalnotes_lib::app::drafting::DraftingRequest;
-    let mut note = Note::new("Le devis reste à confirmer.".into());
-    let path = std::env::temp_dir().join(format!(
-        "vocalnotes-intention-change-{}-{}.md",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    note.save_copy(&path).unwrap();
-    note.start_voice(false).unwrap();
-    let old = ScriptedInterpreter { fail: false, response: serde_json::json!({"status":"resolved","message":"","actions":[{
-        "type":"drafting_intent","text":"Présenter le devis","form":"e-mail","tone":"cordial","context":""
-    }]}).to_string() };
-    assert!(
-        DraftingRequest::prepare(&mut note, 1, 1)
-            .unwrap()
-            .interpret(&old, "Rédige un e-mail cordial")
-            .await
-            .unwrap()
-            .commit(&mut note)
-            .is_ok()
-    );
-    note.stop("Manuel");
-    note.start_voice(false).unwrap();
-    let new = ScriptedInterpreter { fail: false, response: serde_json::json!({"status":"resolved","message":"","actions":[{
-        "type":"drafting_intent","text":"Présenter le devis","form":"synthèse concise","tone":"neutre","context":""
-    }]}).to_string() };
-    assert!(
-        DraftingRequest::prepare(&mut note, 1, 1)
-            .unwrap()
-            .interpret(
-                &new,
-                "Finalement, transforme ce message en synthèse concise, avec un ton neutre."
-            )
-            .await
-            .unwrap()
-            .commit(&mut note)
-            .is_ok()
-    );
-    assert_eq!(note.drafting_intention().form(), "synthèse concise");
-    assert_eq!(note.drafting_intention().tone(), "neutre");
-    assert_eq!(note.snapshot().source, "Le devis reste à confirmer.");
+async fn explicit_reformat_uses_only_current_nonblank_fields_and_commits_content_only() {
+    use vocalnotes_lib::{app::drafting::ReformatRequest, domain::DictationTarget};
+    let original = "# Titre\n\nTexte.\n\n```text\nopaque\n```\n";
+    let reformatted = "# Titre\n\nTexte corrigé.\n\n```text\nopaque\n```\n";
+    let mut note = Note::new(original.into());
+    note.set_context("Contexte de la note.".into()).unwrap();
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("Corriger uniquement l'orthographe.".into())
+        .unwrap();
+    let snapshot = note.snapshot();
+    let request = ReformatRequest::prepare(&note, snapshot.note_id, snapshot.revision).unwrap();
+    let reformatter = FixedReformatter {
+        response: r##"{"content_markdown":"# Titre\n\nTexte corrigé.\n\n```text\nopaque\n```\n"}"##,
+        seen: std::sync::Mutex::new(None),
+    };
+
+    let reply = request.reformat(&reformatter).await.unwrap();
+    let input = reformatter.seen.lock().unwrap().take().unwrap();
+    assert_eq!(input.content_markdown, original);
+    assert_eq!(input.context.as_deref(), Some("Contexte de la note."));
     assert_eq!(
-        note.snapshot().last_voice_result,
-        "Intention de rédaction mise à jour."
+        input.instructions.as_deref(),
+        Some("Corriger uniquement l'orthographe.")
     );
-    note.stop("Manuel");
-    assert_eq!(note.snapshot().drafting_intention.unwrap().tone(), "neutre");
-    assert!(!note.snapshot().dirty);
-    let mut reopened = Note::new(String::new());
-    reopened.open(&path).unwrap();
-    assert_eq!(reopened.drafting_intention().form(), "synthèse concise");
-    assert_eq!(reopened.drafting_intention().tone(), "neutre");
-    assert_eq!(reopened.snapshot().source, "Le devis reste à confirmer.");
-    std::fs::remove_file(path).unwrap();
+    reply.commit(&mut note).unwrap();
+
+    let updated = note.snapshot();
+    assert_eq!(updated.source, reformatted);
+    assert_eq!(updated.context, "Contexte de la note.");
+    assert_eq!(updated.instructions, "Corriger uniquement l'orthographe.");
+    assert_eq!(updated.revision, snapshot.revision + 1);
+    assert_eq!(updated.llm_model, "synthetic-model");
+}
+
+#[tokio::test]
+async fn reformat_rejects_empty_or_oversized_input_and_stale_optional_fields() {
+    use vocalnotes_lib::{app::drafting::ReformatRequest, domain::DictationTarget};
+    let empty = Note::new(" \n".into());
+    let snapshot = empty.snapshot();
+    assert!(ReformatRequest::prepare(&empty, snapshot.note_id, snapshot.revision).is_err());
+
+    let mut oversized = Note::new("Note.".into());
+    oversized.set_dictation_mode(DictationTarget::Instructions);
+    oversized.set_instructions("x".repeat(16_384)).unwrap();
+    let snapshot = oversized.snapshot();
+    assert!(ReformatRequest::prepare(&oversized, snapshot.note_id, snapshot.revision).is_err());
+
+    let mut note = Note::new("Note intacte.".into());
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("Consigne initiale.".into()).unwrap();
+    let snapshot = note.snapshot();
+    let request = ReformatRequest::prepare(&note, snapshot.note_id, snapshot.revision).unwrap();
+    let reformatter = FixedReformatter {
+        response: r#"{"content_markdown":"Note reformulée."}"#,
+        seen: std::sync::Mutex::new(None),
+    };
+    let reply = request.reformat(&reformatter).await.unwrap();
+    note.set_instructions("Consigne modifiée pendant la requête.".into())
+        .unwrap();
+    assert!(reply.commit(&mut note).is_err());
+    assert_eq!(note.snapshot().source, "Note intacte.");
+    assert_eq!(
+        note.snapshot().instructions,
+        "Consigne modifiée pendant la requête."
+    );
+}
+
+#[tokio::test]
+async fn reformat_rejects_changed_opaque_blocks_without_mutating_the_note() {
+    use vocalnotes_lib::app::drafting::ReformatRequest;
+    let mut note = Note::new("# Note\n\n```text\nopaque\n```\n".into());
+    let snapshot = note.snapshot();
+    let request = ReformatRequest::prepare(&note, snapshot.note_id, snapshot.revision).unwrap();
+    let reformatter = FixedReformatter {
+        response: r##"{"content_markdown":"# Note\n\n```text\nchanged\n```\n"}"##,
+        seen: std::sync::Mutex::new(None),
+    };
+    let reply = request.reformat(&reformatter).await.unwrap();
+    assert!(reply.commit(&mut note).is_err());
+    assert_eq!(note.snapshot().source, "# Note\n\n```text\nopaque\n```\n");
 }

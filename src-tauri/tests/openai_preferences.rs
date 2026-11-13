@@ -41,6 +41,14 @@ fn data(
     .to_string()
 }
 
+fn valid_note_path() -> String {
+    std::env::temp_dir()
+        .join("notes")
+        .join("test.md")
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
 fn fresh_and_existing_openai_are_not_migrated() {
     let f = Fixture::new();
@@ -49,24 +57,26 @@ fn fresh_and_existing_openai_are_not_migrated() {
     assert_eq!(fresh.get().stt.model, STT_MODEL);
     assert_eq!(fresh.get().llm.model, LLM_MODEL);
     assert!(!f.path().exists());
+    let note_path = valid_note_path();
     let original = data(
         "openai",
         "custom-stt",
         "openai",
         "custom-llm",
-        Some("/notes/test.md"),
+        Some(&note_path),
     );
     fs::write(f.path(), &original).unwrap();
     let store = PreferencesStore::open(f.path()).unwrap();
     assert!(!store.was_migrated());
     assert_eq!(store.get().stt.model, "custom-stt");
     assert_eq!(store.get().llm.model, "custom-llm");
-    assert_eq!(store.get().last_note, Some(PathBuf::from("/notes/test.md")));
+    assert_eq!(store.get().last_note, Some(PathBuf::from(note_path)));
     assert_eq!(fs::read_to_string(f.path()).unwrap(), original);
 }
 
 #[test]
 fn each_historical_selection_migrates_once_and_preserves_note_and_other_selection() {
+    let note_path = valid_note_path();
     for (sp, sm, lp, lm, expected_stt, expected_llm) in [
         (
             "mistral",
@@ -94,7 +104,7 @@ fn each_historical_selection_migrates_once_and_preserves_note_and_other_selectio
         ),
     ] {
         let f = Fixture::new();
-        fs::write(f.path(), data(sp, sm, lp, lm, Some("/notes/test.md"))).unwrap();
+        fs::write(f.path(), data(sp, sm, lp, lm, Some(&note_path))).unwrap();
         let store = PreferencesStore::open(f.path()).unwrap();
         assert!(store.was_migrated());
         let value = store.get();
@@ -106,7 +116,7 @@ fn each_historical_selection_migrates_once_and_preserves_note_and_other_selectio
             (&*value.stt.model, &*value.llm.model),
             (expected_stt, expected_llm)
         );
-        assert_eq!(value.last_note, Some(PathBuf::from("/notes/test.md")));
+        assert_eq!(value.last_note, Some(PathBuf::from(&note_path)));
         let persisted = fs::read(f.path()).unwrap();
         let restarted = PreferencesStore::open(f.path()).unwrap();
         assert!(!restarted.was_migrated());
@@ -206,14 +216,15 @@ fn migrated_last_note_keeps_body_intention_and_path_after_save_and_reopen() {
     assert_eq!(loaded_body, body);
     assert!(loaded_intention == intention);
     let updated = format!("{body}\nAjout manuel.\n");
-    assert_eq!(
-        file.save(&encode(&updated, &loaded_intention)).unwrap(),
-        SaveOutcome::Saved
-    );
+    let saved_path = match file.save(&encode(&updated, &loaded_intention)).unwrap() {
+        SaveOutcome::Saved => note_path.clone(),
+        SaveOutcome::Copy { path } => path,
+        SaveOutcome::Conflict { .. } => panic!("unexpected conflict"),
+    };
     let restarted = PreferencesStore::open(f.path()).unwrap();
     assert!(!restarted.was_migrated());
     assert_eq!(restarted.get().last_note, Some(note_path.clone()));
-    let (_, reopened) = MarkdownFile::open(&note_path).unwrap();
+    let (_, reopened) = MarkdownFile::open(&saved_path).unwrap();
     let (body_after, intention_after) = decode(&reopened).unwrap();
     assert_eq!(body_after, updated);
     assert!(intention_after == intention);

@@ -21,6 +21,7 @@ function frames() {
   };
 }
 const base: Snapshot = { noteId:1, sessionId:2, generation:3, manualPeriod:1, revision:0,
+  dictationMode:"content", context:"", instructions:"", dictationTransitionPending:false, inputGeneration:1,
   mode:"voice", source:"Note", blocks:[{from:0,to:4,raw:"Note",kind:"paragraph"}],
   dirty:false, message:"", transcriptEnabled:true, transcriptPassageId:1,
   transcriptProvisional:"Bonjour", speechStartedAtEpochUs:1_000_000 };

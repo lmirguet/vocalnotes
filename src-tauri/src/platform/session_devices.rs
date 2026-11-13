@@ -17,6 +17,9 @@ pub trait StopCapture: Send + Sync {
 pub trait CaptureStream: Send {
     fn control(&self) -> Arc<dyn StopCapture>;
     fn next_frame(&self) -> Result<Option<AudioFrame>, &'static str>;
+    fn is_finished(&self) -> bool {
+        false
+    }
 }
 pub trait SessionDevices: Send + Sync + 'static {
     type Transcription: crate::ports::stt::LiveStt;
@@ -53,10 +56,14 @@ impl CaptureStream for NativeCapture {
         match self.frames.try_recv() {
             Ok(frame) => Ok(Some(frame)),
             Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) if self.is_finished() => Ok(None),
             Err(TryRecvError::Disconnected) => {
                 Err("Capture interrompue : passages non intégrés ; aucune reprise automatique.")
             }
         }
+    }
+    fn is_finished(&self) -> bool {
+        NativeCapture::is_finished(self)
     }
 }
 impl SessionDevices for NativeDevices {

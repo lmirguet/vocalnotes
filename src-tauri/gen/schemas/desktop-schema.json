@@ -219,6 +219,12 @@
           "markdownDescription": "Enables the prototype_manual command without any pre-configured scope."
         },
         {
+          "description": "Enables the prototype_reformat command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-reformat",
+          "markdownDescription": "Enables the prototype_reformat command without any pre-configured scope."
+        },
+        {
           "description": "Enables the prototype_set_key command without any pre-configured scope.",
           "type": "string",
           "const": "allow-prototype-set-key",
@@ -277,6 +283,12 @@
           "type": "string",
           "const": "deny-prototype-manual",
           "markdownDescription": "Denies the prototype_manual command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_reformat command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-reformat",
+          "markdownDescription": "Denies the prototype_reformat command without any pre-configured scope."
         },
         {
           "description": "Denies the prototype_set_key command without any pre-configured scope.",

@@ -16,6 +16,16 @@ use std::{collections::HashMap, path::Path};
 
 const MAX_SOURCE: usize = 1_048_576;
 const MAX_TRANSACTIONS: usize = 256;
+const MAX_INSTRUCTIONS_BYTES: usize = 16_384;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationTarget {
+    #[default]
+    Content,
+    Context,
+    Instructions,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +45,11 @@ pub struct Snapshot {
     pub revision: u64,
     pub generation: u64,
     pub mode: &'static str,
+    pub dictation_mode: DictationTarget,
+    pub context: String,
+    pub instructions: String,
+    pub dictation_transition_pending: bool,
+    pub input_generation: u64,
     pub listening_state: &'static str,
     pub drafting_intention: Option<DraftingIntention>,
     pub change_feedback: Option<ChangeFeedback>,
@@ -112,6 +127,8 @@ pub struct Note {
     destination: Option<std::path::PathBuf>,
     storage: Option<MarkdownFile>,
     storage_conflict: bool,
+    pending_dictation_mode: Option<DictationTarget>,
+    pending_instruction_segments: u32,
 }
 
 pub fn blocks(source: &str) -> Vec<Block> {
@@ -261,6 +278,24 @@ fn patched(source: &str, patches: &[Patch]) -> Result<String, &'static str> {
     Ok(result)
 }
 
+fn append_dictation(current: &str, segment: &str, paragraph: bool) -> String {
+    let separator =
+        if current.is_empty() || current.ends_with(if paragraph { "\n\n" } else { "\n" }) {
+            ""
+        } else if paragraph && current.ends_with('\n') {
+            "\n"
+        } else if paragraph {
+            "\n\n"
+        } else {
+            "\n"
+        };
+    let mut result = String::with_capacity(current.len() + separator.len() + segment.len());
+    result.push_str(current);
+    result.push_str(separator);
+    result.push_str(segment);
+    result
+}
+
 impl Note {
     pub fn new(source: String) -> Self {
         Self {
@@ -271,6 +306,11 @@ impl Note {
                 revision: 0,
                 generation: 1,
                 mode: "manual",
+                dictation_mode: DictationTarget::Content,
+                context: String::new(),
+                instructions: String::new(),
+                dictation_transition_pending: false,
+                input_generation: 1,
                 listening_state: "stopped",
                 drafting_intention: None,
                 change_feedback: None,
@@ -316,12 +356,17 @@ impl Note {
             destination: None,
             storage: None,
             storage_conflict: false,
+            pending_dictation_mode: None,
+            pending_instruction_segments: 0,
         }
     }
 
     pub fn snapshot(&self) -> Snapshot {
         let mut snapshot = self.state.clone();
         snapshot.drafting_intention = (!self.intention.is_empty()).then(|| self.intention.clone());
+        snapshot.context = self.intention.context().to_owned();
+        snapshot.instructions = self.state.instructions.clone();
+        snapshot.dictation_transition_pending = self.pending_dictation_mode.is_some();
         snapshot
     }
 
@@ -330,17 +375,195 @@ impl Note {
         self.state.source = source;
         self.state.blocks = blocks(&self.state.source);
         self.state.revision += 1;
+        self.state.input_generation += 1;
         self.state.dirty = true;
         if self.storage.is_some() {
             let _ = self.save_current();
         }
     }
 
+    pub fn set_dictation_mode(&mut self, target: DictationTarget) {
+        if self.state.dictation_mode == target {
+            self.pending_dictation_mode = None;
+            self.state.dictation_transition_pending = false;
+            return;
+        }
+        if self.state.dictation_mode == DictationTarget::Instructions
+            && target != DictationTarget::Instructions
+            && self.pending_instruction_segments > 0
+        {
+            self.pending_dictation_mode = Some(target);
+            self.state.dictation_transition_pending = true;
+            self.state.message =
+                "Sortie d'Instructions différée : transcription en attente.".into();
+            return;
+        }
+        self.apply_dictation_mode(target);
+    }
+
+    fn apply_dictation_mode(&mut self, target: DictationTarget) {
+        if self.state.dictation_mode == DictationTarget::Instructions
+            && target != DictationTarget::Instructions
+            && !self.state.instructions.is_empty()
+        {
+            self.state.instructions.clear();
+            self.state.input_generation += 1;
+        }
+        self.pending_dictation_mode = None;
+        self.state.dictation_transition_pending = false;
+        self.state.dictation_mode = target;
+        self.state.message = "Mode de dictée modifié.".into();
+    }
+
+    pub fn begin_dictation_segment(&mut self) -> Result<DictationTarget, &'static str> {
+        let target = self.state.dictation_mode;
+        if target == DictationTarget::Instructions {
+            self.pending_instruction_segments = self
+                .pending_instruction_segments
+                .checked_add(1)
+                .ok_or("Trop de transcriptions en attente.")?;
+        }
+        Ok(target)
+    }
+
+    pub fn route_dictation_text(
+        &mut self,
+        target: DictationTarget,
+        text: String,
+    ) -> Result<(), &'static str> {
+        let text = text.trim();
+        let result = if text.is_empty() {
+            Ok(())
+        } else {
+            match target {
+                DictationTarget::Content => {
+                    let source = append_dictation(&self.state.source, text, true);
+                    if source.len() > MAX_SOURCE {
+                        Err("Limite de note atteinte ; transcription non ajoutée.")
+                    } else {
+                        self.publish(source);
+                        self.state.message = "Transcription ajoutée au contenu.".into();
+                        Ok(())
+                    }
+                }
+                DictationTarget::Context => {
+                    let context = append_dictation(self.intention.context(), text, false);
+                    self.set_context(context).map(|()| {
+                        self.state.message = "Transcription ajoutée au contexte.".into();
+                    })
+                }
+                DictationTarget::Instructions => {
+                    let instructions = append_dictation(&self.state.instructions, text, false);
+                    if instructions.len() > MAX_INSTRUCTIONS_BYTES {
+                        Err("Limite d'instructions atteinte ; transcription non ajoutée.")
+                    } else {
+                        self.state.instructions = instructions;
+                        self.state.input_generation += 1;
+                        self.state.message = "Transcription ajoutée aux instructions.".into();
+                        Ok(())
+                    }
+                }
+            }
+        };
+        if target == DictationTarget::Instructions {
+            self.pending_instruction_segments = self.pending_instruction_segments.saturating_sub(1);
+            if result.is_err() {
+                self.pending_dictation_mode = None;
+                self.state.dictation_transition_pending = false;
+            } else if self.pending_instruction_segments == 0 {
+                if let Some(target) = self.pending_dictation_mode {
+                    self.apply_dictation_mode(target);
+                }
+            }
+        }
+        if result.is_ok() && !text.is_empty() {
+            self.state.voice_applied += 1;
+            self.state.last_voice_result = "Transcription ajoutée à sa destination.".into();
+        }
+        result
+    }
+
+    pub fn set_context(&mut self, context: String) -> Result<(), &'static str> {
+        let intention = self.intention.with_context(context)?;
+        if intention != self.intention {
+            self.intention = intention;
+            self.state.revision += 1;
+            self.state.input_generation += 1;
+            self.state.dirty = true;
+            if self.storage.is_some() {
+                let _ = self.save_current();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_instructions(&mut self, text: String) -> Result<(), &'static str> {
+        if self.state.dictation_mode != DictationTarget::Instructions {
+            return Err("Les instructions ne sont modifiables qu'en mode Instructions.");
+        }
+        if text.len() > MAX_INSTRUCTIONS_BYTES {
+            return Err("Instructions trop volumineuses ; aucune modification appliquée.");
+        }
+        if self.state.instructions != text {
+            self.state.instructions = text;
+            self.state.input_generation += 1;
+        }
+        Ok(())
+    }
+
+    pub fn reformat_started(&mut self) {
+        self.state.llm_requests += 1;
+        self.state.message =
+            "Reformulation explicitement demandée ; contenu inchangé en attente.".into();
+    }
+
+    pub fn apply_reformat(
+        &mut self,
+        note_id: u64,
+        base_revision: u64,
+        input_generation: u64,
+        input_opaque_blocks: &[String],
+        content_markdown: String,
+        model: &str,
+    ) -> Result<(), &'static str> {
+        if self.state.note_id != note_id
+            || self.state.revision != base_revision
+            || self.state.input_generation != input_generation
+        {
+            return Err("Résultat de reformulation périmé ; note inchangée.");
+        }
+        if content_markdown.trim().is_empty() {
+            return Err("Réponse LLM vide ; aucun effet.");
+        }
+        if content_markdown.len() > 65_536 || content_markdown.len() > MAX_SOURCE {
+            return Err("Réponse LLM trop volumineuse.");
+        }
+        let current_opaque: Vec<_> = blocks(&self.state.source)
+            .into_iter()
+            .filter(|block| block.kind == "opaque")
+            .map(|block| block.raw)
+            .collect();
+        let result_opaque: Vec<_> = blocks(&content_markdown)
+            .into_iter()
+            .filter(|block| block.kind == "opaque")
+            .map(|block| block.raw)
+            .collect();
+        if &current_opaque != input_opaque_blocks || result_opaque != current_opaque {
+            return Err("La réponse altère un bloc Markdown opaque ; aucun effet.");
+        }
+        if self.state.source != content_markdown {
+            self.publish(content_markdown);
+        }
+        self.state.llm_model = model.into();
+        self.state.message = "Contenu reformulé ; contexte et instructions inchangés.".into();
+        Ok(())
+    }
+
     pub fn manual(&mut self, proposal: Proposal) -> Ack {
         let id = proposal.transaction_id.clone();
         let mut accepted = false;
         let mut message = "Proposition refusée : reconstruire depuis le cœur sans rejeu.";
-        if self.state.mode == "manual"
+        if !self.state.close_pending
             && proposal.note_id == self.state.note_id
             && proposal.manual_period == self.state.manual_period
         {
@@ -657,6 +880,9 @@ impl Note {
     }
 
     pub fn stop(&mut self, message: &str) {
+        self.pending_instruction_segments = 0;
+        self.pending_dictation_mode = None;
+        self.state.dictation_transition_pending = false;
         self.clear_transcript();
         self.state.generation += 1;
         self.state.manual_period += 1;
@@ -674,6 +900,12 @@ impl Note {
 
     pub fn loaded(&mut self, source: String) {
         self.intention.clear();
+        self.pending_dictation_mode = None;
+        self.pending_instruction_segments = 0;
+        self.state.dictation_mode = DictationTarget::Content;
+        self.state.instructions.clear();
+        self.state.dictation_transition_pending = false;
+        self.state.input_generation += 1;
         self.state.change_feedback = None;
         self.state.note_id += 1;
         self.state.transcript_passage_id = 0;
@@ -867,6 +1099,7 @@ impl Note {
         if self.state.dirty {
             if self.storage.is_some() {
                 if self.save_current().is_ok() {
+                    self.clear_transient_instructions();
                     return true;
                 }
                 // Keep the detailed conflict/recovery paths available in the window.
@@ -880,7 +1113,19 @@ impl Note {
                     .into();
             return false;
         }
+        self.clear_transient_instructions();
         true
+    }
+
+    fn clear_transient_instructions(&mut self) {
+        if !self.state.instructions.is_empty() {
+            self.state.instructions.clear();
+            self.state.input_generation += 1;
+        }
+        self.state.dictation_mode = DictationTarget::Content;
+        self.pending_dictation_mode = None;
+        self.pending_instruction_segments = 0;
+        self.state.dictation_transition_pending = false;
     }
 
     pub fn intervene(
@@ -1135,11 +1380,78 @@ impl WorkingTargets {
                         .ok_or("Cible invalide.")?;
                 }
             }
+
         }
         for (_, block) in &mut self.0 {
             block.raw = next.get(block.from..block.to).unwrap_or("").to_owned();
         }
         *source = next;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaving_instructions_waits_for_the_original_passage_before_clearing_text() {
+        let mut note = Note::new("Note".into());
+        note.set_dictation_mode(DictationTarget::Instructions);
+        note.set_instructions("instruction manuelle".into())
+            .unwrap();
+        let original_target = note.begin_dictation_segment().unwrap();
+
+        note.set_dictation_mode(DictationTarget::Context);
+        let pending = note.snapshot();
+        assert_eq!(pending.dictation_mode, DictationTarget::Instructions);
+        assert!(pending.dictation_transition_pending);
+        assert_eq!(pending.instructions, "instruction manuelle");
+
+        note.route_dictation_text(original_target, "instruction dictée".into())
+            .unwrap();
+        let completed = note.snapshot();
+        assert_eq!(completed.dictation_mode, DictationTarget::Context);
+        assert!(!completed.dictation_transition_pending);
+        assert!(completed.instructions.is_empty());
+        assert_eq!(completed.voice_applied, 1);
+    }
+
+    #[test]
+    fn manual_content_edits_are_allowed_during_capture_but_stale_edits_are_rejected() {
+        let mut note = Note::new("Note".into());
+        note.start_voice(false).unwrap();
+        let snapshot = note.snapshot();
+        let valid = Proposal {
+            transaction_id: "manual-during-capture".into(),
+            note_id: snapshot.note_id,
+            manual_period: snapshot.manual_period,
+            base_revision: snapshot.revision,
+            patches: vec![Patch {
+                from: 0,
+                to: 4,
+                expected: "Note".into(),
+                text: "Note éditée".into(),
+            }],
+        };
+
+        assert!(note.manual(valid).accepted);
+        assert_eq!(note.state.mode, "voice");
+        assert_eq!(note.state.source, "Note éditée");
+
+        let stale = Proposal {
+            transaction_id: "stale-during-capture".into(),
+            note_id: note.state.note_id,
+            manual_period: note.state.manual_period,
+            base_revision: note.state.revision - 1,
+            patches: vec![Patch {
+                from: 0,
+                to: note.state.source.len(),
+                expected: note.state.source.clone(),
+                text: "Écrasement périmé".into(),
+            }],
+        };
+        assert!(!note.manual(stale).accepted);
+        assert_eq!(note.state.source, "Note éditée");
     }
 }
