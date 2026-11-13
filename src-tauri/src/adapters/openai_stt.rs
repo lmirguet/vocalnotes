@@ -6,6 +6,7 @@ use crate::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{future::Future, time::Duration};
 use tokio::{
     net::TcpStream,
@@ -112,26 +113,24 @@ impl<T: JsonSender + JsonReceiver> SttSession<T> {
             socket
                 .send_json(json!({"type":"session.update","session":configuration(model)}))
                 .await?;
-            let ack = read(&mut socket).await?;
-            let input = &ack["session"]["audio"]["input"];
-            if ack["type"] != "session.updated"
-                || ack["session"]["type"] != "transcription"
-                || input["format"]["type"] != "audio/pcm"
-                || input["format"]["rate"] != 24000
-                || input["transcription"]["model"] != model
-                || input["transcription"]["delay"] != "minimal"
-                || input.get("turn_detection") != Some(&Value::Null)
-                || input["transcription"]
-                    .get("language")
-                    .is_some_and(|v| !v.is_null())
-                || input["transcription"]
-                    .get("languages")
-                    .is_some_and(|v| !v.is_null())
-                || input["transcription"]
-                    .get("prompt")
-                    .is_some_and(|v| !v.is_null())
-            {
-                return Err("STT [configuration] : configuration non acquittée.");
+            loop {
+                let ack = read(&mut socket).await?;
+                match ack["type"].as_str() {
+                    Some("error") => return Err(remote_error(&ack)),
+                    Some(
+                        "rate_limits.updated"
+                        | "conversation.item.created"
+                        | "conversation.item.added"
+                        | "conversation.item.done",
+                    ) => continue,
+                    Some("session.updated") => Self::validate_configuration_ack(&ack, model)?,
+                    _ => {
+                        return Err(
+                            "STT [protocol] : événement inattendu avant l’acquittement de configuration.",
+                        );
+                    }
+                }
+                break;
             }
             Ok(())
         })
@@ -150,6 +149,60 @@ impl<T: JsonSender + JsonReceiver> SttSession<T> {
             deadline: None,
             duplicates: 0,
         })
+    }
+
+    fn validate_configuration_ack(ack: &Value, model: &str) -> Result<(), &'static str> {
+        let session = &ack["session"];
+        if session["type"] != "transcription" {
+            return Err("STT [configuration-session] : type de session incompatible.");
+        }
+
+        let input = &session["audio"]["input"];
+        if input["format"]["type"] != "audio/pcm" || input["format"]["rate"] != 24000 {
+            return Err("STT [configuration-format] : format audio incompatible.");
+        }
+        let transcription = &input["transcription"];
+        let model_match = transcription["model"] == model;
+        let delay = transcription.get("delay");
+        let delay_present = delay.is_some();
+        let delay_match = delay.and_then(Value::as_str) == Some("minimal");
+        let delay_supported = match delay {
+            None => true,
+            Some(value) => matches!(
+                value.as_str(),
+                Some("minimal" | "low" | "medium" | "high" | "xhigh")
+            ),
+        };
+        if !model_match || !delay_supported {
+            crate::diagnostics::numbers(
+                "STT configuration acknowledgement rejected",
+                &[
+                    ("model_match", u64::from(model_match)),
+                    ("delay_match", u64::from(delay_match)),
+                ],
+            );
+            if !model_match {
+                return Err("STT [configuration-model] : modèle de transcription incompatible.");
+            }
+            return Err("STT [configuration-delay] : délai de transcription non pris en charge.");
+        }
+        if !delay_present || !delay_match {
+            crate::diagnostics::numbers(
+                "STT transcription delay not confirmed minimal",
+                &[
+                    ("delay_present", u64::from(delay_present)),
+                    ("delay_match", u64::from(delay_match)),
+                ],
+            );
+        }
+        if input.get("turn_detection") != Some(&Value::Null)
+            || transcription.get("language").is_some_and(|v| !v.is_null())
+            || transcription.get("languages").is_some_and(|v| !v.is_null())
+            || transcription.get("prompt").is_some_and(|v| !v.is_null())
+        {
+            return Err("STT [configuration-options] : options de transcription incompatibles.");
+        }
+        Ok(())
     }
 
     pub fn begin_passage(&mut self) -> Result<(), &'static str> {
@@ -291,20 +344,80 @@ impl<T: JsonSender + JsonReceiver> SttSession<T> {
                 Err("STT [recognition] : transcription refusée.")
             }
             Some("error") => Err(remote_error(&value)),
-            Some("rate_limits.updated" | "conversation.item.created") => Ok(SttEvent::Other),
-            _ => Err("STT [protocol] : événement inattendu."),
+            Some(
+                "rate_limits.updated"
+                | "conversation.item.created"
+                | "conversation.item.added"
+                | "conversation.item.done",
+            ) => Ok(SttEvent::Other),
+            _ => {
+                let (code, fingerprint) = rejected_event_diagnostic(&value);
+                match fingerprint {
+                    Some(fingerprint) => crate::diagnostics::numbers(
+                        "STT streaming event rejected",
+                        &[
+                            ("event_type_code", code),
+                            ("event_type_fingerprint", fingerprint),
+                        ],
+                    ),
+                    None => crate::diagnostics::numbers(
+                        "STT streaming event rejected",
+                        &[("event_type_code", code)],
+                    ),
+                }
+                Err("STT [protocol] : événement inattendu.")
+            }
         }
+    }
+}
+fn rejected_event_diagnostic(value: &Value) -> (u64, Option<u64>) {
+    // Closed diagnostic codes: never copy an arbitrary provider string into logs.
+    let kind = match value.get("type") {
+        None => return (1, None),
+        Some(Value::String(kind)) => kind,
+        Some(_) => return (2, None),
+    };
+    if kind.is_empty()
+        || kind.len() > 128
+        || !kind
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+    {
+        return (3, None);
+    }
+    let code = match kind.as_str() {
+        "session.created" => 10,
+        "session.updated" => 11,
+        "input_audio_buffer.cleared" => 20,
+        "input_audio_buffer.speech_started" => 21,
+        "input_audio_buffer.speech_stopped" => 22,
+        "conversation.item.input_audio_transcription.segment" => 30,
+        "conversation.item.done" => 31,
+        "conversation.item.deleted" => 32,
+        "conversation.item.retrieved" => 33,
+        "conversation.item.added" => 34,
+        _ => 0,
+    };
+    if code == 0 {
+        let hash = Sha256::digest(kind.as_bytes());
+        let mut bytes = [0; 8];
+        bytes.copy_from_slice(&hash[..8]);
+        (code, Some(u64::from_be_bytes(bytes)))
+    } else {
+        (code, None)
     }
 }
 fn remote_error(value: &Value) -> &'static str {
     match value["error"]["code"].as_str() {
-        Some("invalid_api_key") => "STT [http-401] : authentification refusée.",
-        Some("model_not_found" | "permission_denied") => "STT [access] : accès ou modèle refusé.",
-        Some("rate_limit_exceeded" | "insufficient_quota") => {
-            "STT [http-429] : quota ou limite de requêtes."
+        Some("invalid_api_key") => "STT [authentication] : authentification OpenAI refusée.",
+        Some("model_not_found" | "permission_denied") => {
+            "STT [access] : accès ou modèle OpenAI refusé."
         }
-        Some("server_error") => "STT [http-5xx] : service indisponible.",
-        _ => "STT [configuration] : requête ou traitement refusé.",
+        Some("rate_limit_exceeded" | "insufficient_quota") => {
+            "STT [quota] : quota ou limite OpenAI atteinte."
+        }
+        Some("server_error") => "STT [service] : service OpenAI indisponible.",
+        _ => "STT [remote-error] : erreur OpenAI non catégorisée.",
     }
 }
 impl SttSession<NativeSocket> {
@@ -355,6 +468,66 @@ impl<T: JsonSender + JsonReceiver> LiveStt for SttSession<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_event_codes_are_closed_and_distinguish_missing_invalid_and_unknown() {
+        for (event, code) in [
+            (json!({"type":"synthetic-private-data"}), 0),
+            (json!({"other":"synthetic-private-data"}), 1),
+            (json!({"type":null}), 2),
+            (json!({"type":42}), 2),
+            (json!({"type":{"private":"synthetic-private-data"}}), 2),
+            (json!({"type":"session.created"}), 10),
+            (json!({"type":"session.updated"}), 11),
+            (json!({"type":"input_audio_buffer.cleared"}), 20),
+            (json!({"type":"input_audio_buffer.speech_started"}), 21),
+            (json!({"type":"input_audio_buffer.speech_stopped"}), 22),
+            (
+                json!({"type":"conversation.item.input_audio_transcription.segment"}),
+                30,
+            ),
+            (json!({"type":"conversation.item.done"}), 31),
+            (json!({"type":"conversation.item.deleted"}), 32),
+            (json!({"type":"conversation.item.retrieved"}), 33),
+            (json!({"type":"conversation.item.added"}), 34),
+        ] {
+            let (actual, fingerprint) = rejected_event_diagnostic(&event);
+            assert_eq!(actual, code);
+            assert_eq!(fingerprint.is_some(), code == 0);
+        }
+    }
+
+    #[test]
+    fn unknown_event_fingerprint_is_stable_and_only_hashes_the_type() {
+        let event = json!({"type":"abc","text":"synthetic-private-data"});
+        let expected = (0, Some(0xba7816bf8f01cfea));
+        assert_eq!(rejected_event_diagnostic(&event), expected);
+        assert_eq!(
+            rejected_event_diagnostic(&json!({"type":"abc","unrelated":42})),
+            expected
+        );
+    }
+
+    #[test]
+    fn event_fingerprints_enforce_token_alphabet_and_length_bounds() {
+        for kind in [
+            "a".to_string(),
+            "a".repeat(128),
+            "Token_1.test-event".into(),
+        ] {
+            let (code, fingerprint) = rejected_event_diagnostic(&json!({"type":kind}));
+            assert_eq!(code, 0);
+            assert!(fingerprint.is_some());
+        }
+        for kind in ["", "a b", "a\nb", "a/b", "a:b", "é", "\0"] {
+            assert_eq!(rejected_event_diagnostic(&json!({"type":kind})), (3, None));
+        }
+        assert_eq!(
+            rejected_event_diagnostic(&json!({"type":"a".repeat(129)})),
+            (3, None)
+        );
+    }
+
     struct Waiting {
         incoming: tokio::sync::mpsc::Receiver<Value>,
     }
