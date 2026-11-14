@@ -946,3 +946,96 @@ fn metadata_only_external_conflict_preserves_both_complete_documents() {
     reopened.loaded("Autre note.".into());
     assert!(reopened.drafting_intention().is_empty());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_extended_acl_refuses_replacement_and_preserves_recovery() {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    use vocalnotes_lib::app::document::DocumentErrorCode;
+    let f = Fixture::new();
+    let path = f.path("acl.md");
+    fs::write(&path, "original").unwrap();
+    // Linux POSIX ACL xattr v2, including one named user: ordinary mode bits
+    // alone cannot preserve this access policy across an inode exchange.
+    let mut acl = 2_u32.to_le_bytes().to_vec();
+    for (tag, permissions, id) in [
+        (1_u16, 6_u16, u32::MAX),
+        (2, 4, unsafe { libc::geteuid() }),
+        (4, 4, u32::MAX),
+        (16, 4, u32::MAX),
+        (32, 0, u32::MAX),
+    ] {
+        acl.extend(tag.to_le_bytes());
+        acl.extend(permissions.to_le_bytes());
+        acl.extend(id.to_le_bytes());
+    }
+    let native_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    assert_eq!(
+        unsafe {
+            libc::setxattr(
+                native_path.as_ptr(),
+                c"system.posix_acl_access".as_ptr(),
+                acl.as_ptr().cast(),
+                acl.len(),
+                0,
+            )
+        },
+        0,
+        "native ACL prerequisite: {}",
+        io::Error::last_os_error()
+    );
+    let (mut file, _) = MarkdownFile::open(&path).unwrap();
+    let failure = file.save("local").unwrap_err();
+    assert_eq!(failure.code, DocumentErrorCode::UnsupportedStorage);
+    assert_eq!(fs::read(&path).unwrap(), b"original");
+    let mut observed = vec![0_u8; acl.len()];
+    assert_eq!(
+        unsafe {
+            libc::getxattr(
+                native_path.as_ptr(),
+                c"system.posix_acl_access".as_ptr(),
+                observed.as_mut_ptr().cast(),
+                observed.len(),
+            )
+        },
+        acl.len() as isize
+    );
+    assert_eq!(observed, acl);
+    assert!(
+        failure
+            .recovery_paths
+            .iter()
+            .any(|p| fs::read(p).ok().as_deref() == Some(b"local"))
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_relocated_parent_never_installs_into_a_substituted_directory() {
+    use vocalnotes_lib::storage::markdown_file::{DiskVersion, WriteResult};
+    let f = Fixture::new();
+    let original = f.path("parent");
+    let moved = f.path("moved");
+    fs::create_dir(&original).unwrap();
+    let path = original.join("note.md");
+    fs::write(&path, "original").unwrap();
+    let prepared = write_candidate(
+        path.clone(),
+        "local",
+        Some(DiskVersion::observe(&path).unwrap()),
+    )
+    .prepare()
+    .ok()
+    .unwrap();
+    fs::rename(&original, &moved).unwrap();
+    fs::create_dir(&original).unwrap();
+    fs::write(&path, "other writer").unwrap();
+    assert!(!matches!(prepared.install(), WriteResult::Saved { .. }));
+    assert_eq!(fs::read(&path).unwrap(), b"other writer");
+    assert_eq!(fs::read(moved.join("note.md")).unwrap(), b"original");
+    assert!(
+        fs::read_dir(&moved)
+            .unwrap()
+            .any(|entry| fs::read(entry.unwrap().path()).ok().as_deref() == Some(b"local"))
+    );
+}

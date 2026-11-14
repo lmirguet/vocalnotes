@@ -216,10 +216,19 @@ fn write_atomic(path: &Path, value: &Preferences) -> Result<(), &'static str> {
         #[cfg(windows)]
         {
             use std::os::windows::ffi::OsStrExt;
-            use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+            use windows_sys::Win32::Storage::FileSystem::{
+                MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+            };
             let from: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
             let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
+            if unsafe {
+                MoveFileExW(
+                    from.as_ptr(),
+                    to.as_ptr(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            } == 0
+            {
                 return Err(std::io::Error::last_os_error());
             }
         }

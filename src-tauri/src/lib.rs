@@ -56,7 +56,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "main" { return; }
+            if window.label() != "main" {
+                return;
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 if let Some(preferences) = window.app_handle().get_webview_window("preferences") {
                     let _ = preferences.destroy();
@@ -68,7 +70,9 @@ pub fn run() {
                 api.prevent_close();
                 let state = window.state::<PrototypeState>();
                 let app = window.app_handle();
-                if let Ok(context) = platform::desktop::main_context(app, platform::desktop::CommandOrigin::Window) {
+                if let Ok(context) =
+                    platform::desktop::main_context(app, platform::desktop::CommandOrigin::Window)
+                {
                     let _ = app::close::request(&state.0, app, context);
                 }
             }

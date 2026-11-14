@@ -458,7 +458,11 @@ pub struct MarkdownFile {
 impl MarkdownFile {
     /// Adoption is memory-only: the installed version is the authority.
     pub fn from_saved(path: PathBuf, version: DiskVersion) -> Self {
-        Self { path, version, watcher: None }
+        Self {
+            path,
+            version,
+            watcher: None,
+        }
     }
 
     pub fn version(&self) -> &DiskVersion {

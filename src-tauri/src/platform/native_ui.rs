@@ -48,6 +48,8 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     main.set_menu(Menu::with_items(app, &[&file, &edit, &help])?)?;
     #[cfg(windows)]
     install_windows_keys(&main)?;
+    #[cfg(target_os = "linux")]
+    install_linux_keys(&main)?;
     main.on_menu_event(|window, event| {
         if window.label() != "main" {
             return;
@@ -58,6 +60,67 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         if result.is_err() {
             crate::diagnostics::event("Commande de menu refusée ; note conservée.");
         }
+    });
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_keys<R: Runtime>(main: &tauri::WebviewWindow<R>) -> tauri::Result<()> {
+    use gtk::{gdk::ModifierType, prelude::*};
+    let window = main.gtk_window()?;
+    let layout = main.default_vbox()?;
+    let app = main.app_handle().clone();
+    // Handle native commands before GtkWindow's default propagation to WebKit.
+    // WebKit consumes Alt mnemonics and otherwise can insert the letter in the note.
+    window.connect_key_press_event(move |_, event| {
+        let state = event.state();
+        let ctrl = state.contains(ModifierType::CONTROL_MASK);
+        let alt = state.contains(ModifierType::MOD1_MASK);
+        let shift = state.contains(ModifierType::SHIFT_MASK);
+        if state.contains(ModifierType::MOD5_MASK) {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let letter = event.keyval().to_unicode().map(|c| c.to_ascii_uppercase());
+        let command = letter.and_then(|c| key_command(c as u32, ctrl, alt, shift));
+        let menu_index = if alt && !ctrl && !shift {
+            match letter {
+                Some('F') => Some(0),
+                Some('E') => Some(1),
+                Some('A') => Some(2),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if command.is_none() && menu_index.is_none() {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let handle = app.clone();
+        let layout = layout.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let state = handle.state::<PrototypeState>();
+            if let Some(command) = command {
+                if dispatch(&handle, &state.0, command).is_err() {
+                    crate::diagnostics::event("Raccourci natif refusé ; note conservée.");
+                }
+            } else if main_context(&handle, CommandOrigin::Menu)
+                .and_then(|context| context.validate())
+                .is_ok()
+            {
+                if let Some(bar) = layout
+                    .children()
+                    .into_iter()
+                    .find_map(|child| child.downcast::<gtk::MenuBar>().ok())
+                {
+                    if let Some(item) =
+                        menu_index.and_then(|index| bar.children().get(index).cloned())
+                    {
+                        item.mnemonic_activate(false);
+                    }
+                }
+            }
+        });
+        gtk::glib::Propagation::Stop
     });
     Ok(())
 }
@@ -87,7 +150,7 @@ fn install_windows_keys<R: Runtime>(main: &tauri::WebviewWindow<R>) -> tauri::Re
                 let ctrl = GetKeyState(VK_CONTROL as i32) < 0;
                 let alt = GetKeyState(VK_MENU as i32) < 0;
                 let shift = GetKeyState(VK_SHIFT as i32) < 0;
-                let command = windows_key_command(key, ctrl, alt, shift);
+                let command = key_command(key, ctrl, alt, shift);
                 let menu = !ctrl && !shift && alt && matches!(key, 0x46 | 0x45 | 0x41);
                 if command.is_none() && !menu {
                     return Ok(());
@@ -160,8 +223,7 @@ fn install_windows_keys<R: Runtime>(main: &tauri::WebviewWindow<R>) -> tauri::Re
     })
 }
 
-#[cfg(any(windows, test))]
-fn windows_key_command(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<&'static str> {
+fn key_command(key: u32, ctrl: bool, alt: bool, shift: bool) -> Option<&'static str> {
     if alt && !ctrl && !shift && key == 0x73 {
         return Some("file.quit");
     }
@@ -514,30 +576,15 @@ mod tests {
     use super::*;
     #[test]
     fn webview_keys_keep_save_as_distinct_and_leave_altgr_and_local_typing_alone() {
-        assert_eq!(
-            windows_key_command(0x53, true, false, false),
-            Some("file.save")
-        );
-        assert_eq!(
-            windows_key_command(0x53, true, false, true),
-            Some("file.save_as")
-        );
-        assert_eq!(
-            windows_key_command(0x5a, true, false, false),
-            Some("edit.undo")
-        );
-        assert_eq!(
-            windows_key_command(0x59, true, false, false),
-            Some("edit.redo")
-        );
-        assert_eq!(
-            windows_key_command(0x73, false, true, false),
-            Some("file.quit")
-        );
-        assert_eq!(windows_key_command(0x45, true, true, false), None);
-        assert_eq!(windows_key_command(0x53, false, false, false), None);
-        assert_eq!(windows_key_command(0x53, true, true, false), None);
-        assert_eq!(windows_key_command(0x5a, true, false, true), None);
+        assert_eq!(key_command(0x53, true, false, false), Some("file.save"));
+        assert_eq!(key_command(0x53, true, false, true), Some("file.save_as"));
+        assert_eq!(key_command(0x5a, true, false, false), Some("edit.undo"));
+        assert_eq!(key_command(0x59, true, false, false), Some("edit.redo"));
+        assert_eq!(key_command(0x73, false, true, false), Some("file.quit"));
+        assert_eq!(key_command(0x45, true, true, false), None);
+        assert_eq!(key_command(0x53, false, false, false), None);
+        assert_eq!(key_command(0x53, true, true, false), None);
+        assert_eq!(key_command(0x5a, true, false, true), None);
     }
 
     #[test]
