@@ -2,9 +2,28 @@
 //! Namespaced, versioned HTML comment is hidden by ordinary Markdown renderers.
 //! Unknown/corrupt metadata is rejected, never silently stripped or rewritten.
 use crate::domain::intention::DraftingIntention;
+pub const MAX_DOCUMENT_BYTES: usize = 1_048_576;
 const NAMESPACE: &str = "<!-- vocalnotes:intention:";
 const PREFIX: &str = "<!-- vocalnotes:intention:v1\n";
 const END: &str = "\n-->\n\n";
+
+pub fn encode_checked(source: &str, intention: &DraftingIntention) -> Result<String, &'static str> {
+    if source.len() > MAX_DOCUMENT_BYTES
+        || !DraftingIntention::valid_parts(
+            intention.purpose(),
+            intention.form(),
+            intention.tone(),
+            intention.context(),
+        )
+    {
+        return Err("Note ou intention trop volumineuse ; aucun fichier modifié.");
+    }
+    let document = encode(source, intention);
+    if document.len() > MAX_DOCUMENT_BYTES {
+        return Err("Note sérialisée trop volumineuse ; aucun fichier modifié.");
+    }
+    Ok(document)
+}
 
 pub fn encode(source: &str, intention: &DraftingIntention) -> String {
     if intention.is_empty() && !source.starts_with(NAMESPACE) {
@@ -21,6 +40,9 @@ pub fn encode(source: &str, intention: &DraftingIntention) -> String {
 }
 
 pub fn decode(document: &str) -> Result<(String, DraftingIntention), &'static str> {
+    if document.len() > MAX_DOCUMENT_BYTES {
+        return Err("Note trop volumineuse ; fichier inchangé.");
+    }
     if !document.starts_with(NAMESPACE) {
         return Ok((document.to_owned(), DraftingIntention::default()));
     }

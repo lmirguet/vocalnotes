@@ -21,6 +21,8 @@ function frames() {
   };
 }
 const base: Snapshot = { noteId:1, sessionId:2, generation:3, manualPeriod:1, revision:0,
+  documentName:"Sans titre", documentPath:null, documentFormat:null, documentOperation:null, documentError:null,
+  history:{content:{canUndo:false,canRedo:false},context:{canUndo:false,canRedo:false},instructions:{canUndo:false,canRedo:false}},
   dictationMode:"content", context:"", instructions:"", dictationTransitionPending:false, inputGeneration:1,
   mode:"voice", source:"Note", blocks:[{from:0,to:4,raw:"Note",kind:"paragraph"}],
   dirty:false, message:"", transcriptEnabled:true, transcriptPassageId:1,

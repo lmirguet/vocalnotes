@@ -3,7 +3,8 @@ type Service = { provider: string; model: string };
 type Models = { stt: Service; llm: Service };
 
 // No secret value is accepted or held here. Key management keeps its dedicated IPC.
-export function createModelPreferencesView(invoke: Invoke, onSaved?: (models: Models) => void) {
+export function createModelPreferencesView(invoke: Invoke, onSaved?: (models: Models) => void,
+  onClose?: () => Promise<void>) {
   const element = document.createElement("section");
   element.hidden = true; element.setAttribute("aria-label", "Préférences");
   const title = document.createElement("h2"); title.textContent = "Préférences";
@@ -31,7 +32,9 @@ export function createModelPreferencesView(invoke: Invoke, onSaved?: (models: Mo
     return { key, input, provider };
   });
   const save = document.createElement("button"); save.type = "button"; save.dataset.action = "models-save";
-  save.textContent = "Enregistrer les réglages"; save.disabled = true;
+  save.textContent = "OK"; save.disabled = true;
+  const cancel = document.createElement("button");
+  cancel.type = "button"; cancel.textContent = "Annuler"; cancel.dataset.action = "models-cancel";
   const message = document.createElement("p"); message.setAttribute("role", "status");
   let loaded = false;
   let pending = false;
@@ -42,13 +45,33 @@ export function createModelPreferencesView(invoke: Invoke, onSaved?: (models: Mo
     if (!loaded || pending) return;
     const models = Object.fromEntries(modelFields.map(field => [field.key, { provider:field.provider.value, model:field.input.value }]));
     pending = true; save.disabled = true;
-    void invoke("preferences_set", { models }).then(value => {
+    cancel.disabled = true;
+    for (const field of modelFields) { field.input.disabled = true; field.provider.disabled = true; }
+    void invoke("preferences_set", { models }).then(async value => {
       display(value as Models); onSaved?.(value as Models); message.textContent = "Réglages enregistrés pour la prochaine session. Accès aux modèles non testé.";
+      if (onClose) await onClose();
+      else element.hidden = true;
     }).catch(() => { message.textContent = "Enregistrement impossible ; réglages précédents conservés. Vérifier les identifiants et le fichier de préférences."; })
-      .finally(() => { pending = false; save.disabled = !loaded; });
+      .finally(() => {
+        pending = false; save.disabled = !loaded; cancel.disabled = false;
+        for (const field of modelFields) { field.input.disabled = false; field.provider.disabled = false; }
+      });
   });
-  element.append(title, notice, fields, save, message);
-  return { element, async toggle() {
+  async function close() {
+    if (pending) return;
+    if (onClose) {
+      try { await onClose(); }
+      catch { message.textContent = "Fermeture impossible ; utilisez la croix pour réessayer."; }
+    } else element.hidden = true;
+    for (const field of modelFields) field.input.value = "";
+    loaded = false;
+  }
+  cancel.addEventListener("click", () => { void close(); });
+  element.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); void close(); }
+  });
+  element.append(title, notice, fields, save, cancel, message);
+  return { element, cancel: close, async toggle() {
     element.hidden = !element.hidden;
     if (element.hidden || pending) return;
     pending = true; save.disabled = true;

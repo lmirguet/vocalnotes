@@ -177,10 +177,28 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the document_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-document-action",
+          "markdownDescription": "Enables the document_action command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preferences_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preferences-close",
+          "markdownDescription": "Enables the preferences_close command without any pre-configured scope."
+        },
+        {
           "description": "Enables the preferences_get command without any pre-configured scope.",
           "type": "string",
           "const": "allow-preferences-get",
           "markdownDescription": "Enables the preferences_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preferences_open command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preferences-open",
+          "markdownDescription": "Enables the preferences_open command without any pre-configured scope."
         },
         {
           "description": "Enables the preferences_set command without any pre-configured scope.",
@@ -219,6 +237,12 @@
           "markdownDescription": "Enables the prototype_manual command without any pre-configured scope."
         },
         {
+          "description": "Enables the prototype_reformat command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prototype-reformat",
+          "markdownDescription": "Enables the prototype_reformat command without any pre-configured scope."
+        },
+        {
           "description": "Enables the prototype_set_key command without any pre-configured scope.",
           "type": "string",
           "const": "allow-prototype-set-key",
@@ -237,10 +261,28 @@
           "markdownDescription": "Enables the startup_status command without any pre-configured scope."
         },
         {
+          "description": "Denies the document_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-document-action",
+          "markdownDescription": "Denies the document_action command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preferences_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preferences-close",
+          "markdownDescription": "Denies the preferences_close command without any pre-configured scope."
+        },
+        {
           "description": "Denies the preferences_get command without any pre-configured scope.",
           "type": "string",
           "const": "deny-preferences-get",
           "markdownDescription": "Denies the preferences_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preferences_open command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preferences-open",
+          "markdownDescription": "Denies the preferences_open command without any pre-configured scope."
         },
         {
           "description": "Denies the preferences_set command without any pre-configured scope.",
@@ -277,6 +319,12 @@
           "type": "string",
           "const": "deny-prototype-manual",
           "markdownDescription": "Denies the prototype_manual command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prototype_reformat command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prototype-reformat",
+          "markdownDescription": "Denies the prototype_reformat command without any pre-configured scope."
         },
         {
           "description": "Denies the prototype_set_key command without any pre-configured scope.",
@@ -2335,6 +2383,72 @@
           "type": "string",
           "const": "core:window:deny-unminimize",
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
+        },
+        {
+          "description": "This permission set configures the types of dialogs\navailable from the dialog plugin.\n\n#### Granted Permissions\n\nAll dialog types are enabled.\n\n\n\n#### This default permission set includes:\n\n- `allow-message`\n- `allow-save`\n- `allow-open`",
+          "type": "string",
+          "const": "dialog:default",
+          "markdownDescription": "This permission set configures the types of dialogs\navailable from the dialog plugin.\n\n#### Granted Permissions\n\nAll dialog types are enabled.\n\n\n\n#### This default permission set includes:\n\n- `allow-message`\n- `allow-save`\n- `allow-open`"
+        },
+        {
+          "description": "Enables the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:allow-ask",
+          "markdownDescription": "Enables the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)"
+        },
+        {
+          "description": "Enables the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:allow-confirm",
+          "markdownDescription": "Enables the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)"
+        },
+        {
+          "description": "Enables the message command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-message",
+          "markdownDescription": "Enables the message command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-open",
+          "markdownDescription": "Enables the open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-save",
+          "markdownDescription": "Enables the save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:deny-ask",
+          "markdownDescription": "Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)"
+        },
+        {
+          "description": "Denies the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:deny-confirm",
+          "markdownDescription": "Denies the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)"
+        },
+        {
+          "description": "Denies the message command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-message",
+          "markdownDescription": "Denies the message command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-open",
+          "markdownDescription": "Denies the open command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-save",
+          "markdownDescription": "Denies the save command without any pre-configured scope."
         }
       ]
     },

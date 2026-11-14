@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { mountPrototype, type Snapshot } from "./Prototype";
+import { mountPreferences } from "./Preferences";
+import type { DocumentDispatch } from "./DocumentCommands";
 import { readFileSync } from "node:fs";
 import { URL as NodeURL } from "node:url";
 
 const styles = readFileSync(new NodeURL("../style.css", import.meta.url), "utf8");
 
 const initial: Snapshot = {
+  documentName:"Sans titre", documentPath:null, documentFormat:null, documentOperation:null, documentError:null,
+  history:{content:{canUndo:false,canRedo:false},context:{canUndo:false,canRedo:false},instructions:{canUndo:false,canRedo:false}},
   noteId: 1, manualPeriod: 1, revision: 0, generation: 1, mode: "manual",
   dictationMode: "content", context: "", instructions: "", dictationTransitionPending: false, inputGeneration: 1,
   source: "bonjour\n\n```rs\nopaque()\n```\n", dirty: false,
@@ -23,8 +27,10 @@ const preferences = {
 async function setup(invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> = vi.fn(async (command: string) => command === "preferences_get" ? preferences : initial)) {
   const root = document.createElement("main");
   document.body.replaceChildren(root);
-  const app = await mountPrototype(root, invoke);
-  return { root, invoke, app };
+  let dispatch!: (event: DocumentDispatch) => void;
+  const unlisten = vi.fn();
+  const app = await mountPrototype(root, invoke, { listen: async callback => { dispatch = callback; return unlisten; } });
+  return { root, invoke, app, dispatch, unlisten };
 }
 
 describe("prototype natif partiel", () => {
@@ -139,24 +145,16 @@ describe("prototype natif partiel", () => {
       "Précision demandée ; aucune action appliquée.");
     app.destroy();
   });
-  it("affiche menus et éditeur sans démarrer de mode automatiquement", async () => {
+  it("laisse les menus au bureau natif sans démarrer de mode automatiquement", async () => {
     const { root, invoke, app } = await setup();
-    const nav = root.querySelector('nav[aria-label="Menus"]')!;
-    const triggers = [...nav.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")];
-    expect(triggers.map(b => b.textContent)).toEqual(["Fichier", "Édition", "Aide"]);
-    expect(nav.querySelector("details")).toBeNull();
-    expect(triggers.every(b => b.getAttribute("aria-expanded") === "false")).toBe(true);
-    for (const trigger of triggers) {
-      expect(document.getElementById(trigger.getAttribute("aria-controls")!)?.hidden).toBe(true);
-    }
-    expect(nav.contains(root.querySelector('[role="toolbar"]'))).toBe(false);
+    expect(root.querySelector('nav[aria-label="Menus"], .menu-bar')).toBeNull();
     for (const action of ["new", "open", "save", "save-current", "close", "cancel-close", "copy", "undo", "redo"]) {
-      expect(nav.querySelectorAll(`[data-action="${action}"]`)).toHaveLength(1);
+      expect(root.querySelectorAll(`[data-action="${action}"]`)).toHaveLength(0);
     }
     expect(root.querySelector(".ProseMirror")).not.toBeNull();
     expect(root.querySelector("[data-opaque]")?.textContent).toContain("opaque()");
     expect(vi.mocked(invoke).mock.calls).toEqual([
-      ["prototype_snapshot", undefined], ["preferences_get", undefined],
+      ["prototype_snapshot", undefined], ["preferences_get", undefined], ["prototype_snapshot"],
     ]);
     expect(root.textContent).toContain("Microphone arrêté — aucun mode sélectionné");
     expect(root.querySelector<HTMLButtonElement>('[data-dictation-mode="content"]')?.getAttribute("aria-pressed")).toBe("false");
@@ -165,65 +163,37 @@ describe("prototype natif partiel", () => {
     app.destroy();
   });
 
-  it("déroule un seul panneau, referme par bouton, action, clic extérieur et Escape avec focus cohérent", async () => {
-    const { root, app, invoke } = await setup();
-    const [files, edits, help] = [...root.querySelectorAll<HTMLButtonElement>("nav button[aria-expanded]")];
-    const panel = (b: HTMLButtonElement) => document.getElementById(b.getAttribute("aria-controls")!)!;
-    files!.click();
-    expect(panel(files!).hidden).toBe(false);
-    edits!.click();
-    expect(panel(files!).hidden).toBe(true);
-    expect(panel(edits!).hidden).toBe(false);
-    edits!.click();
-    expect(panel(edits!).hidden).toBe(true);
-    files!.click();
-    const path = root.querySelector<HTMLInputElement>('[aria-label="Destination Markdown locale"]')!;
-    path.focus();
-    path.value = "/synthetic.md";
-    path.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(panel(files!).hidden).toBe(true);
-    expect(document.activeElement).toBe(files);
-    files!.click();
-    root.querySelector<HTMLButtonElement>('[data-action="open"]')!.click();
-    expect(panel(files!).hidden).toBe(true);
-    expect(document.activeElement).toBe(files);
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("prototype_action", {
-      action: { type: "open", path: "/synthetic.md" },
-    }));
-    help!.click();
-    root.querySelector('[role="status"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(panel(help!).hidden).toBe(true);
-    expect(path.value).toBe("/synthetic.md");
-    app.destroy();
+  it("déduplique le dispatch natif sans réémettre request et désabonne le vrai adaptateur", async () => {
+    let snapshot = initial;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "document_action") {
+        expect((args!.action as {type:string}).type).toBe("ready");
+        snapshot = { ...snapshot, documentOperation:null };
+        return {snapshot};
+      }
+      return command === "preferences_get" ? preferences : snapshot;
+    });
+    const { app, dispatch, unlisten } = await setup(invoke);
+    snapshot = { ...initial, documentOperation:{operationId:"1",noteId:1,action:"save",phase:"awaiting_ui",cancellable:true} };
+    dispatch({type:"prepare",dispatchId:"first",operationId:"1"});
+    dispatch({type:"prepare",dispatchId:"first",operationId:"1"});
+    dispatch({type:"prepare",dispatchId:"second",operationId:"1"});
+    await vi.waitFor(() => expect(snapshot.documentOperation).toBeNull());
+    expect(invoke.mock.calls.filter(([name]) => name === "document_action")).toHaveLength(1);
+    app.destroy(); app.destroy();
+    expect(unlisten).toHaveBeenCalledOnce();
   });
 
-  it("navigation disclosure : flèches/Home/End sur les intitulés, Tab natif dans les champs, sortie et nettoyage", async () => {
-    const { root, app } = await setup();
-    const triggers = [...root.querySelectorAll<HTMLButtonElement>("nav button[aria-expanded]")];
-    const key = (b: HTMLElement, value: string) => b.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }));
-    triggers[0]!.focus();
-    key(triggers[0]!, "ArrowRight");
-    expect(document.activeElement).toBe(triggers[1]);
-    key(triggers[1]!, "End");
-    expect(document.activeElement).toBe(triggers[2]);
-    key(triggers[2]!, "Home");
-    expect(document.activeElement).toBe(triggers[0]);
-    key(triggers[0]!, "ArrowLeft");
-    expect(document.activeElement).toBe(triggers[2]);
-    triggers[0]!.click();
-    const path = root.querySelector<HTMLInputElement>('[aria-label="Destination Markdown locale"]')!;
-    path.focus();
-    expect(key(path, "ArrowRight")).toBe(true); // text caret remains native
-    expect(key(path, "Tab")).toBe(true); // no trap or menuitem semantics
-    expect(document.activeElement).toBe(path);
-    const outside = root.querySelector<HTMLTextAreaElement>('[data-dictation-field="context"]')!;
-    outside.focus();
-    expect(triggers[0]!.getAttribute("aria-expanded")).toBe("false");
-    expect(document.activeElement).toBe(outside);
+  it("rétablit la dernière zone sans déplacer la sélection de l'autre zone ni muter la note", async () => {
+    const invoke = vi.fn(async (command:string) => command === "document_action" ? {snapshot:initial}
+      : command === "preferences_get" ? preferences : initial);
+    const {root,app,dispatch} = await setup(invoke);
+    const selection = app.view.state.selection.toJSON();
+    dispatch({type:"restore_focus",dispatchId:"focus",area:"context"});
+    await vi.waitFor(() => expect(document.activeElement).toBe(root.querySelector('[data-dictation-field=context]')));
+    expect(app.view.state.selection.toJSON()).toEqual(selection);
+    expect(invoke.mock.calls.some(([name]) => name === "prototype_manual" || name === "prototype_action")).toBe(false);
     app.destroy();
-    triggers[0]!.click();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(document.activeElement).toBe(outside);
   });
 
   it("applique le shell compact, les icônes et la popup d'instruction sans bordure", async () => {
@@ -235,16 +205,7 @@ describe("prototype natif partiel", () => {
     style.textContent = styles;
     document.head.append(style);
     try {
-      const nav = root.querySelector("nav")!;
-      const trigger = nav.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-      const panel = document.getElementById(trigger.getAttribute("aria-controls")!)!;
-      expect(getComputedStyle(nav).display).toBe("flex");
-      expect(getComputedStyle(nav).flexWrap).toBe("nowrap");
-      expect(getComputedStyle(panel).display).toBe("none");
-      trigger.click();
-      expect(getComputedStyle(panel).position).toBe("absolute");
-      expect(getComputedStyle(panel).display).not.toBe("none");
-      expect(getComputedStyle(panel).zIndex).toBe("10");
+      expect(root.querySelector("nav")).toBeNull();
       root.querySelector<HTMLButtonElement>('[data-dictation-mode="instructions"]')!.click();
       const popup = root.querySelector<HTMLElement>(".instruction-popup")!;
       await vi.waitFor(() => expect(popup.hidden).toBe(false));
@@ -269,8 +230,9 @@ describe("prototype natif partiel", () => {
   });
 
   it("champ masqué vidé avant attente IPC, aucune valeur renvoyée au store", async () => {
-    const invoke = vi.fn(async (command: string) => command === "prototype_snapshot" ? initial : undefined);
-    const { root, app } = await setup(invoke);
+    const invoke = vi.fn(async (command: string) => command === "preferences_get" ? preferences : undefined);
+    const root = document.createElement("main"); document.body.replaceChildren(root);
+    const app = await mountPreferences(root, invoke);
     const input = root.querySelector<HTMLInputElement>('input[type="password"]')!;
     input.value = "synthetic-test-secret";
     root.querySelector<HTMLButtonElement>('[data-action="key-save"]')!.click();
@@ -282,12 +244,13 @@ describe("prototype natif partiel", () => {
 
   it("erreur IPC expurgée et sans prétendre une sauvegarde réussie", async () => {
     const invoke = vi.fn(async (command: string) => {
-      if (command === "prototype_snapshot") return initial;
+      if (command === "preferences_get") return preferences;
       throw new Error("sensitive provider payload");
     });
-    const { root, app } = await setup(invoke);
+    const root = document.createElement("main"); document.body.replaceChildren(root);
+    const app = await mountPreferences(root, invoke);
     root.querySelector<HTMLButtonElement>('[data-action="key-delete"]')!.click();
-    await vi.waitFor(() => expect(root.textContent).toContain("Échec"));
+    await vi.waitFor(() => expect(root.textContent).toContain("indisponible"));
     expect(root.textContent).not.toContain("sensitive provider payload");
     app.destroy();
   });
@@ -302,17 +265,10 @@ describe("prototype natif partiel", () => {
 
   it("garde l'édition disponible pendant la capture sans afficher de commandes vocales", async () => {
     const { root, app, invoke } = await setup(vi.fn(async () => ({ ...initial, mode: "voice" })));
-    // Locate by label, not DOM text presence alone.
-    const trigger = [...root.querySelectorAll<HTMLButtonElement>("nav button[aria-expanded]")]
-      .find(b => b.textContent === "Édition")!;
-    trigger.click();
     expect(root.querySelector(".ProseMirror")?.getAttribute("contenteditable")).toBe("true");
-    expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(true);
-    expect(root.querySelector<HTMLButtonElement>('[data-action="redo"]')?.disabled).toBe(true);
-    root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.click();
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(root.querySelector('[data-action="undo"], [data-action="redo"]')).toBeNull();
     expect(vi.mocked(invoke).mock.calls).toEqual([
-      ["prototype_snapshot", undefined], ["preferences_get", undefined],
+      ["prototype_snapshot", undefined], ["preferences_get", undefined], ["prototype_snapshot"],
     ]);
     expect(root.querySelector('[data-action="start"]')).toBeNull();
     app.destroy();
@@ -335,10 +291,9 @@ describe("prototype natif partiel", () => {
     app.view.dispatch(app.view.state.tr.insertText("c", 3));
     expect(proposals).toHaveLength(1);
     expect(root.textContent).toContain("projection en attente");
-    expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-action="undo"]')).toBeNull();
     expect(root.querySelector('[data-action="start"]')).toBeNull();
-    root.querySelector<HTMLButtonElement>('[data-action="save"]')!.click();
-    root.querySelector<HTMLButtonElement>('[data-action="close"]')!.click();
+    expect(root.querySelector('[data-action="save"], [data-action="close"]')).toBeNull();
     expect(invoke.mock.calls.filter(call => call[0] === "prototype_action"
       && (call[1] as { action?: { type?: string } } | undefined)?.action?.type !== "set_dictation_mode"))
       .toHaveLength(0);
@@ -351,7 +306,7 @@ describe("prototype natif partiel", () => {
       snapshot: { ...simple, revision: 2, source: "abc", dirty: true, blocks: [{ from: 0, to: 3, raw: "abc", kind: "paragraph" }] } });
     await vi.waitFor(() => expect(root.textContent).not.toContain("projection en attente"));
     expect(app.view.state.doc.textContent).toBe("abc");
-    expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(false);
+    expect(root.querySelector('[data-action="undo"]')).toBeNull();
     app.destroy();
   });
 
@@ -368,7 +323,7 @@ describe("prototype natif partiel", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("aucun rejeu"));
     expect(app.view.state.doc.textContent).toBe("a");
     expect(root.querySelector('[aria-label="Saisie non acceptée récupérable en mémoire"]')?.textContent).toBe("ab");
-    expect(root.querySelector<HTMLButtonElement>('[data-action="undo"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-action="undo"]')).toBeNull();
     expect(invoke.mock.calls.filter(call => call[0] === "prototype_manual")).toHaveLength(1);
     app.destroy();
   });
@@ -409,7 +364,7 @@ describe("prototype natif partiel", () => {
     let calls = 0;
     const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) => {
       if (command === "preferences_get") return preferences;
-      if (++calls === 1) return initial;
+      if (++calls <= 2) return initial;
       throw new Error("private error");
     });
     const { root, app } = await setup(invoke);
@@ -420,7 +375,7 @@ describe("prototype natif partiel", () => {
       expect(root.textContent).not.toContain("private error");
       expect(invoke.mock.calls).toEqual([
         ["prototype_snapshot", undefined], ["preferences_get", undefined],
-        ["prototype_snapshot", undefined],
+        ["prototype_snapshot"], ["prototype_snapshot", undefined],
       ]);
     } finally { app.destroy(); vi.useRealTimers(); }
   });

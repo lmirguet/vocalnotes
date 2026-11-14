@@ -1,5 +1,6 @@
 //! Canonical native note authority, shared by the prototype and foundations.
 use super::session::{Session, Ticket};
+use crate::app::document::{DocumentError, DocumentFormat, DocumentHistory, DocumentOperation};
 use crate::domain::{
     change::{ChangeArea, ChangeFeedback, track_patch},
     intention::DraftingIntention,
@@ -57,6 +58,12 @@ pub struct Snapshot {
     pub voice_activity: &'static str,
     pub source: String,
     pub dirty: bool,
+    pub document_name: String,
+    pub document_path: Option<String>,
+    pub document_format: Option<DocumentFormat>,
+    pub history: DocumentHistory,
+    pub document_operation: Option<DocumentOperation>,
+    pub document_error: Option<DocumentError>,
     pub message: String,
     pub blocks: Vec<Block>,
     pub stt_requests: u64,
@@ -122,6 +129,7 @@ pub struct Ack {
 pub struct Note {
     state: Snapshot,
     confirmed: HashMap<String, Proposal>,
+    confirmed_order: std::collections::VecDeque<String>,
     intention: DraftingIntention,
     session: Session,
     destination: Option<std::path::PathBuf>,
@@ -129,6 +137,21 @@ pub struct Note {
     storage_conflict: bool,
     pending_dictation_mode: Option<DictationTarget>,
     pending_instruction_segments: u32,
+    saved_state: PersistentState,
+    opened_context: String,
+    history: super::history::History,
+    history_transactions: std::collections::VecDeque<(
+        String,
+        crate::app::document::DocumentVersion,
+        DictationTarget,
+        bool,
+    )>,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+struct PersistentState {
+    source: String,
+    intention: DraftingIntention,
 }
 
 pub fn blocks(source: &str) -> Vec<Block> {
@@ -298,6 +321,7 @@ fn append_dictation(current: &str, segment: &str, paragraph: bool) -> String {
 
 impl Note {
     pub fn new(source: String) -> Self {
+        let dirty = !source.is_empty();
         Self {
             state: Snapshot {
                 note_id: 1,
@@ -318,7 +342,13 @@ impl Note {
                 voice_activity: "idle",
                 blocks: blocks(&source),
                 source,
-                dirty: false,
+                dirty,
+                document_name: "Sans titre".into(),
+                document_path: None,
+                document_format: None,
+                history: DocumentHistory::default(),
+                document_operation: None,
+                document_error: None,
                 message: "Manuel — aucune capture. Recettes desktop non exécutées.".into(),
                 stt_requests: 0,
                 llm_requests: 0,
@@ -351,6 +381,7 @@ impl Note {
                 storage_message: String::new(),
             },
             confirmed: HashMap::new(),
+            confirmed_order: std::collections::VecDeque::new(),
             intention: DraftingIntention::default(),
             session: Session::default(),
             destination: None,
@@ -358,6 +389,10 @@ impl Note {
             storage_conflict: false,
             pending_dictation_mode: None,
             pending_instruction_segments: 0,
+            saved_state: PersistentState::default(),
+            opened_context: String::new(),
+            history: super::history::History::default(),
+            history_transactions: std::collections::VecDeque::new(),
         }
     }
 
@@ -367,19 +402,117 @@ impl Note {
         snapshot.context = self.intention.context().to_owned();
         snapshot.instructions = self.state.instructions.clone();
         snapshot.dictation_transition_pending = self.pending_dictation_mode.is_some();
+        snapshot.history = self.history.availability();
+        if self.history.capacity_reached() {
+            snapshot.message.push_str(" Capacité d'historique atteinte : entrées les plus anciennes retirées, texte conservé.");
+        }
+        if let Some(path) = &self.destination {
+            snapshot.document_name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Sans titre".into());
+            snapshot.document_path = Some(path.to_string_lossy().into_owned());
+            snapshot.document_format = DocumentFormat::from_path(path);
+        }
         snapshot
     }
 
     fn publish(&mut self, source: String) {
+        self.publish_origin(source, super::history::Origin::Manual);
+    }
+
+    fn publish_origin(&mut self, source: String, origin: super::history::Origin) {
+        self.record_history(
+            DictationTarget::Content,
+            origin,
+            self.state.source.clone(),
+            &source,
+        );
         self.state.change_feedback = None;
         self.state.source = source;
         self.state.blocks = blocks(&self.state.source);
         self.state.revision += 1;
         self.state.input_generation += 1;
-        self.state.dirty = true;
-        if self.storage.is_some() {
-            let _ = self.save_current();
+        self.refresh_dirty();
+    }
+
+    fn record_history(
+        &mut self,
+        area: DictationTarget,
+        origin: super::history::Origin,
+        before: String,
+        after: &str,
+    ) {
+        self.history.record(area, origin, &before, after);
+    }
+
+    pub fn history_action(
+        &mut self,
+        id: String,
+        version: crate::app::document::DocumentVersion,
+        area: DictationTarget,
+        redo: bool,
+    ) -> Result<(), crate::app::document::DocumentError> {
+        use crate::app::document::{DocumentErrorCode, DocumentVersion};
+        if let Some((_, previous, old_area, old_redo)) = self
+            .history_transactions
+            .iter()
+            .find(|(old, ..)| old == &id)
+        {
+            return if (*previous, *old_area, *old_redo) == (version, area, redo) {
+                Ok(())
+            } else {
+                Err(DocumentErrorCode::StaleRevision.error())
+            };
         }
+        if DocumentVersion::from(&self.snapshot()) != version {
+            return Err(DocumentErrorCode::StaleRevision.error());
+        }
+        let current = match area {
+            DictationTarget::Content => &self.state.source,
+            DictationTarget::Context => self.intention.context(),
+            DictationTarget::Instructions => &self.state.instructions,
+        };
+        let text = self
+            .history
+            .apply(area, redo, current)
+            .ok_or_else(|| DocumentErrorCode::HistoryUnavailable.error())?;
+        match area {
+            DictationTarget::Content => {
+                self.state.source = text;
+                self.state.blocks = blocks(&self.state.source);
+            }
+            DictationTarget::Context => {
+                self.intention = self
+                    .intention
+                    .with_context(text)
+                    .map_err(|_| DocumentErrorCode::SizeLimit.error())?
+            }
+            DictationTarget::Instructions => self.state.instructions = text,
+        }
+        self.state.revision += 1;
+        self.state.input_generation += 1;
+        self.state.change_feedback = None;
+        self.refresh_dirty();
+        self.history_transactions
+            .push_back((id, version, area, redo));
+        if self.history_transactions.len() > 256 {
+            self.history_transactions.pop_front();
+        }
+        Ok(())
+    }
+
+    fn refresh_dirty(&mut self) {
+        self.state.dirty = self.state.source != self.saved_state.source
+            || self.intention != self.saved_state.intention;
+    }
+
+    fn remember_saved_state(&mut self) {
+        self.saved_state = PersistentState {
+            source: self.state.source.clone(),
+            intention: self.intention.clone(),
+        };
+        self.refresh_dirty();
     }
 
     pub fn set_dictation_mode(&mut self, target: DictationTarget) {
@@ -402,6 +535,11 @@ impl Note {
     }
 
     fn apply_dictation_mode(&mut self, target: DictationTarget) {
+        if self.state.dictation_mode == DictationTarget::Instructions
+            && target != DictationTarget::Instructions
+        {
+            self.history.clear(Some(DictationTarget::Instructions));
+        }
         if self.state.dictation_mode == DictationTarget::Instructions
             && target != DictationTarget::Instructions
             && !self.state.instructions.is_empty()
@@ -441,22 +579,29 @@ impl Note {
                     if source.len() > MAX_SOURCE {
                         Err("Limite de note atteinte ; transcription non ajoutée.")
                     } else {
-                        self.publish(source);
+                        self.publish_origin(source, super::history::Origin::Dictation);
                         self.state.message = "Transcription ajoutée au contenu.".into();
                         Ok(())
                     }
                 }
                 DictationTarget::Context => {
                     let context = append_dictation(self.intention.context(), text, false);
-                    self.set_context(context).map(|()| {
-                        self.state.message = "Transcription ajoutée au contexte.".into();
-                    })
+                    self.set_context_origin(context, super::history::Origin::Dictation)
+                        .map(|()| {
+                            self.state.message = "Transcription ajoutée au contexte.".into();
+                        })
                 }
                 DictationTarget::Instructions => {
                     let instructions = append_dictation(&self.state.instructions, text, false);
                     if instructions.len() > MAX_INSTRUCTIONS_BYTES {
                         Err("Limite d'instructions atteinte ; transcription non ajoutée.")
                     } else {
+                        self.record_history(
+                            DictationTarget::Instructions,
+                            super::history::Origin::Dictation,
+                            self.state.instructions.clone(),
+                            &instructions,
+                        );
                         self.state.instructions = instructions;
                         self.state.input_generation += 1;
                         self.state.message = "Transcription ajoutée aux instructions.".into();
@@ -484,15 +629,26 @@ impl Note {
     }
 
     pub fn set_context(&mut self, context: String) -> Result<(), &'static str> {
+        self.set_context_origin(context, super::history::Origin::Manual)
+    }
+
+    fn set_context_origin(
+        &mut self,
+        context: String,
+        origin: super::history::Origin,
+    ) -> Result<(), &'static str> {
         let intention = self.intention.with_context(context)?;
         if intention != self.intention {
+            self.record_history(
+                DictationTarget::Context,
+                origin,
+                self.intention.context().to_owned(),
+                intention.context(),
+            );
             self.intention = intention;
             self.state.revision += 1;
             self.state.input_generation += 1;
-            self.state.dirty = true;
-            if self.storage.is_some() {
-                let _ = self.save_current();
-            }
+            self.refresh_dirty();
         }
         Ok(())
     }
@@ -505,6 +661,12 @@ impl Note {
             return Err("Instructions trop volumineuses ; aucune modification appliquée.");
         }
         if self.state.instructions != text {
+            self.record_history(
+                DictationTarget::Instructions,
+                super::history::Origin::Manual,
+                self.state.instructions.clone(),
+                &text,
+            );
             self.state.instructions = text;
             self.state.input_generation += 1;
         }
@@ -552,7 +714,7 @@ impl Note {
             return Err("La réponse altère un bloc Markdown opaque ; aucun effet.");
         }
         if self.state.source != content_markdown {
-            self.publish(content_markdown);
+            self.publish_origin(content_markdown, super::history::Origin::Reformat);
         }
         self.state.llm_model = model.into();
         self.state.message = "Contenu reformulé ; contexte et instructions inchangés.".into();
@@ -560,6 +722,14 @@ impl Note {
     }
 
     pub fn manual(&mut self, proposal: Proposal) -> Ack {
+        self.manual_origin(proposal, super::history::ManualOrigin::Manual)
+    }
+
+    pub fn manual_origin(
+        &mut self,
+        proposal: Proposal,
+        origin: super::history::ManualOrigin,
+    ) -> Ack {
         let id = proposal.transaction_id.clone();
         let mut accepted = false;
         let mut message = "Proposition refusée : reconstruire depuis le cœur sans rejeu.";
@@ -575,14 +745,15 @@ impl Note {
             {
                 match patched(&self.state.source, &proposal.patches) {
                     Ok(source) => {
-                        if self.confirmed.len() < MAX_TRANSACTIONS {
-                            self.publish(source);
-                            self.confirmed.insert(id.clone(), proposal);
-                            accepted = true;
-                        } else {
-                            // Never evict deduplication identities inside a manual period.
-                            message = "Limite du prototype : rouvrir après sauvegarde pour une nouvelle période.";
+                        self.publish_origin(source, origin.into());
+                        if self.confirmed.len() >= MAX_TRANSACTIONS {
+                            if let Some(old) = self.confirmed_order.pop_front() {
+                                self.confirmed.remove(&old);
+                            }
                         }
+                        self.confirmed_order.push_back(id.clone());
+                        self.confirmed.insert(id.clone(), proposal);
+                        accepted = true;
                     }
                     Err(reason) => message = reason,
                 }
@@ -673,6 +844,7 @@ impl Note {
         self.state.generation += 1;
         self.state.manual_period += 1;
         self.confirmed.clear();
+        self.confirmed_order.clear();
         self.session = Session::default();
         self.state.mode = "voice";
         self.state.listening_state = "starting";
@@ -711,6 +883,7 @@ impl Note {
         self.state.message =
             "Pause — micro arrêté, passages en attente non intégrés ; reprise explicite.".into();
         self.confirmed.clear();
+        self.confirmed_order.clear();
         self.session = Session::default();
     }
 
@@ -891,6 +1064,7 @@ impl Note {
         self.state.voice_activity = "idle";
         self.state.message = message.into();
         self.confirmed.clear();
+        self.confirmed_order.clear();
         self.session = Session::default();
     }
 
@@ -898,7 +1072,15 @@ impl Note {
         self.stop("Changement accepté : traitements précédents invalidés.");
     }
 
+    pub fn invalidate_document_inputs(&mut self) {
+        self.state.input_generation += 1;
+    }
+
     pub fn loaded(&mut self, source: String) {
+        self.confirmed.clear();
+        self.confirmed_order.clear();
+        self.history.clear(None);
+        self.history_transactions.clear();
         self.intention.clear();
         self.pending_dictation_mode = None;
         self.pending_instruction_segments = 0;
@@ -915,14 +1097,84 @@ impl Note {
         self.state.applied_speech_started_at_epoch_us = None;
         self.state.applied_speech_ended_at_epoch_us = None;
         self.state.source = source;
-        self.state.revision = 0;
-        self.state.dirty = false;
+        self.remember_saved_state();
         self.state.blocks = blocks(&self.state.source);
         self.destination = None;
         self.storage = None;
         self.storage_conflict = false;
         self.state.storage_message.clear();
         self.state.close_pending = false;
+        self.opened_context.clear();
+    }
+
+    pub fn save_target(
+        &self,
+    ) -> Option<(
+        std::path::PathBuf,
+        crate::storage::markdown_file::DiskVersion,
+    )> {
+        let storage = self.storage.as_ref()?;
+        if DocumentFormat::from_path(storage.path()) == Some(DocumentFormat::Markdown)
+            && self.intention.context() != self.opened_context
+        {
+            return None;
+        }
+        Some((storage.path().to_owned(), storage.version().clone()))
+    }
+
+    pub fn document_disk(
+        &self,
+    ) -> Option<(
+        std::path::PathBuf,
+        crate::storage::markdown_file::DiskVersion,
+    )> {
+        self.storage
+            .as_ref()
+            .map(|storage| (storage.path().to_owned(), storage.version().clone()))
+    }
+
+    pub fn adopt_saved(
+        &mut self,
+        candidate: &crate::storage::markdown_file::WriteCandidate,
+        version: crate::storage::markdown_file::DiskVersion,
+    ) -> Result<(), crate::app::document::DocumentError> {
+        use crate::{app::document::DocumentErrorCode, storage::markdown_file::WriteContent};
+        if candidate.note_version().note_id != self.state.note_id {
+            return Err(DocumentErrorCode::StaleRevision.error());
+        }
+        let WriteContent::Document { source, intention } = candidate.content() else {
+            return Err(DocumentErrorCode::InvalidDocument.error());
+        };
+        self.saved_state = PersistentState {
+            source: source.clone(),
+            intention: intention.clone(),
+        };
+        self.opened_context = intention.context().to_owned();
+        self.destination = Some(candidate.path().to_owned());
+        self.storage = Some(MarkdownFile::from_saved(
+            candidate.path().to_owned(),
+            version,
+        ));
+        self.storage_conflict = false;
+        self.state.storage_message.clear();
+        self.refresh_dirty();
+        Ok(())
+    }
+
+    /// The caller validates and reads the entire candidate before acquiring the core.
+    pub fn adopt_opened(
+        &mut self,
+        storage: MarkdownFile,
+        source: String,
+        intention: DraftingIntention,
+    ) {
+        self.invalidate_for_open();
+        self.loaded(source);
+        self.intention = intention;
+        self.opened_context = self.intention.context().to_owned();
+        self.destination = Some(storage.path().to_owned());
+        self.storage = Some(storage);
+        self.remember_saved_state();
     }
 
     pub fn open(&mut self, path: &Path) -> Result<(), &'static str> {
@@ -934,10 +1186,12 @@ impl Note {
         let (source, intention) = note_document::decode(&source)?;
         self.loaded(source);
         self.intention = intention;
+        self.remember_saved_state();
         self.destination = Some(path.to_owned());
         self.storage = Some(storage);
+        self.opened_context = self.intention.context().to_owned();
         self.state.message =
-            "Note ouverte ; autosauvegarde contrôlée des modifications acceptées.".into();
+            "Note ouverte ; les modifications seront enregistrées sur demande.".into();
         Ok(())
     }
 
@@ -952,10 +1206,8 @@ impl Note {
     }
 
     pub fn save_copy(&mut self, path: &Path) -> Result<(), &'static str> {
-        let storage = match MarkdownFile::create_copy(
-            path,
-            &note_document::encode(&self.state.source, &self.intention),
-        ) {
+        let document = note_document::encode_checked(&self.state.source, &self.intention)?;
+        let storage = match MarkdownFile::create_copy(path, &document) {
             Ok(file) => file,
             Err(error) => {
                 let message = error.message;
@@ -966,14 +1218,14 @@ impl Note {
         self.storage = Some(storage);
         self.storage_conflict = false;
         self.state.storage_message.clear();
-        self.state.dirty = false;
+        self.remember_saved_state();
         self.destination = Some(path.to_owned());
         self.state.message =
             "Nouvelle copie Markdown enregistrée ; aucun fichier existant remplacé.".into();
         Ok(())
     }
 
-    fn storage_error(&mut self, error: SaveError) {
+    pub(crate) fn storage_error(&mut self, error: SaveError) {
         crate::diagnostics::event("Sauvegarde : erreur ; note conservée en mémoire.");
         self.state.message = error.message.into();
         for path in error.recovery_paths {
@@ -1008,6 +1260,7 @@ impl Note {
                 "Conflit disque : enregistrer une nouvelle copie avant de continuer la sauvegarde.",
             );
         }
+        let document = note_document::encode_checked(&self.state.source, &self.intention)?;
         let storage = self
             .storage
             .as_mut()
@@ -1015,12 +1268,11 @@ impl Note {
         if !self.state.dirty {
             return Ok(());
         }
-        match storage.save(&note_document::encode(&self.state.source, &self.intention)) {
+        match storage.save(&document) {
             Ok(SaveOutcome::Saved) => {
-                self.state.dirty = false;
+                self.remember_saved_state();
                 self.state.storage_message.clear();
-                self.state.message =
-                    "Note enregistrée automatiquement après contrôle de la version disque.".into();
+                self.state.message = "Note enregistrée après contrôle de la version disque.".into();
                 Ok(())
             }
             Ok(SaveOutcome::Conflict { local, external }) => {
@@ -1039,17 +1291,14 @@ impl Note {
                 )
             }
             Ok(SaveOutcome::Copy { path }) => {
-                // A fallback is an explicit destination change, never a silent overwrite.
-                let (storage, _) = MarkdownFile::open(&path).map_err(|e| e.message)?;
-                self.destination = Some(path.clone());
-                self.storage = Some(storage);
-                self.state.dirty = false;
                 self.state.message = format!(
-                    "Remplacement indisponible ; note sauvegardée dans une nouvelle copie : {}",
+                    "Remplacement indisponible ; note non enregistrée à la destination demandée. Préparation conservée : {}",
                     path.display()
                 );
                 self.state.storage_message = self.state.message.clone();
-                Ok(())
+                Err(
+                    "Remplacement indisponible ; choisir Enregistrer sous. La préparation n'est pas adoptée.",
+                )
             }
             Err(error) => {
                 let message = error.message;
@@ -1118,6 +1367,7 @@ impl Note {
     }
 
     fn clear_transient_instructions(&mut self) {
+        self.history.clear(Some(DictationTarget::Instructions));
         if !self.state.instructions.is_empty() {
             self.state.instructions.clear();
             self.state.input_generation += 1;
@@ -1183,20 +1433,21 @@ impl Note {
                 Action::SessionAction {
                     command: SessionCommand::Save {},
                 } => {
-                    if self.destination.is_none() {
-                        return Err(
-                            "Destination de sauvegarde absente : intervention entière sans effet, choisir une destination.",
-                        );
-                    }
-                    // A prototype save is last: validate every edit first, then save accepted
-                    // source exclusively. No partially interpreted tail is replayed.
-                    terminal = Some(SessionCommand::Save {});
+                    return Err(
+                        "Utilisez Enregistrer dans le menu natif ; intervention sans effet.",
+                    );
                 }
                 _ => return Err("Action non disponible dans ce prototype : aucun effet."),
             }
         }
         let intention_changed = self.intention != intention;
 
+        self.record_history(
+            DictationTarget::Context,
+            super::history::Origin::Dictation,
+            self.intention.context().to_owned(),
+            intention.context(),
+        );
         self.intention = intention;
         if intention_reviewed {
             crate::diagnostics::event(if intention_changed {
@@ -1212,12 +1463,10 @@ impl Note {
                 areas: change_areas,
             });
         } else if intention_changed {
-            self.state.dirty = true;
             self.state.revision += 1;
+            self.state.input_generation += 1;
             self.state.change_feedback = None;
-            if self.storage.is_some() {
-                let _ = self.save_current();
-            }
+            self.refresh_dirty();
         }
         match terminal {
             Some(SessionCommand::Save {}) => self.save_current()?,
@@ -1380,7 +1629,6 @@ impl WorkingTargets {
                         .ok_or("Cible invalide.")?;
                 }
             }
-
         }
         for (_, block) in &mut self.0 {
             block.raw = next.get(block.from..block.to).unwrap_or("").to_owned();

@@ -7,6 +7,8 @@ import type { Snapshot } from "./DesktopShell";
 
 function snapshot(raw: string, kind = "paragraph"): Snapshot {
   return { noteId: 1, manualPeriod: 1, revision: 0, generation: 1, mode: "manual",
+    documentName:"Sans titre", documentPath:null, documentFormat:null, documentOperation:null, documentError:null,
+    history:{content:{canUndo:false,canRedo:false},context:{canUndo:false,canRedo:false},instructions:{canUndo:false,canRedo:false}},
     dictationMode: "content", context: "", instructions: "", dictationTransitionPending: false, inputGeneration: 1,
     source: raw, dirty: false, message: "", blocks: [{ from: 0, to: new TextEncoder().encode(raw).length, raw, kind }] };
 }

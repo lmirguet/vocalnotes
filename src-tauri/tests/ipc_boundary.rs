@@ -27,7 +27,7 @@ fn only_typed_actions_and_bounded_local_markdown_paths_enter_dispatch() {
             "accepted: {value}"
         );
     }
-    for action in ["new", "save", "cancel_close", "pause", "stop"] {
+    for action in ["pause", "stop"] {
         assert!(serde_json::from_value::<Command>(json!({"type":action})).is_ok());
         assert!(
             serde_json::from_value::<Command>(json!({"type":action, "extra":"payload"})).is_err()
@@ -39,7 +39,21 @@ fn only_typed_actions_and_bounded_local_markdown_paths_enter_dispatch() {
         serde_json::from_value::<Command>(
             json!({"type":"open", "path":harmless_path.to_string_lossy()})
         )
-        .is_ok()
+        .is_err()
+    );
+    for name in ["note.von", "note.VON", "note.MD"] {
+        assert!(
+            serde_json::from_value::<Command>(json!({
+                "type":"open", "path":temp_dir.join(name).to_string_lossy()
+            }))
+            .is_err()
+        );
+    }
+    assert!(
+        serde_json::from_value::<Command>(json!({
+            "type":"open", "path":r"\\server\share\note.md"
+        }))
+        .is_err()
     );
 }
 
@@ -110,8 +124,24 @@ fn capabilities_only_grant_the_registered_local_commands() {
     assert!(capability.get("remote").is_none());
     let commands = include_str!("../src/app/ipc_commands.rs");
     let permissions = capability["permissions"].as_array().unwrap();
-    assert_eq!(permissions.len(), 11);
+    let expected = [
+        "allow-startup-status",
+        "allow-prototype-snapshot",
+        "allow-prototype-manual",
+        "allow-prototype-action",
+        "allow-prototype-reformat",
+        "allow-preferences-get",
+        "allow-preferences-open",
+        "allow-document-action",
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+    ];
+    assert_eq!(permissions.len(), expected.len());
     for permission in permissions {
+        assert!(expected.contains(&permission.as_str().unwrap()));
+        if permission.as_str().unwrap().starts_with("core:event:") {
+            continue;
+        }
         let name = permission
             .as_str()
             .unwrap()
@@ -123,17 +153,223 @@ fn capabilities_only_grant_the_registered_local_commands() {
 }
 
 #[test]
+fn document_actions_are_strict_and_do_not_accept_paths_or_lossy_operation_ids() {
+    use vocalnotes_lib::app::commands::DocumentAction;
+    for action in [
+        json!({"type":"request","action":"save_as"}),
+        json!({"type":"ready","operationId":"18446744073709551615","noteId":1,"revision":0,"inputGeneration":1}),
+        json!({"type":"cancel","operationId":"1"}),
+        json!({"type":"focus","area":"context"}),
+        json!({"type":"history","direction":"undo","area":"content","transactionId":"undo-1","noteId":1,"baseRevision":0,"inputGeneration":1}),
+    ] {
+        assert!(
+            serde_json::from_value::<DocumentAction>(action.clone()).is_ok(),
+            "{action}"
+        );
+        let mut extra = action.clone();
+        extra["path"] = json!("arbitrary.von");
+        assert!(serde_json::from_value::<DocumentAction>(extra).is_err());
+    }
+    for action in [
+        json!({"type":"request","action":"shell"}),
+        json!({"type":"ready","operationId":"1","noteId":1,"revision":0}),
+        json!({"type":"cancel","operationId":1}),
+        json!({"type":"cancel","operationId":"01"}),
+        json!({"type":"cancel","operationId":"0"}),
+        json!({"type":"focus","area":"preferences"}),
+        json!({"type":"history","direction":"redo","area":"content","transactionId":"","noteId":1,"baseRevision":0,"inputGeneration":1}),
+        json!({"type":"history","direction":"redo","area":"content","transactionId":"x".repeat(129),"noteId":1,"baseRevision":0,"inputGeneration":1}),
+    ] {
+        assert!(
+            serde_json::from_value::<DocumentAction>(action.clone()).is_err(),
+            "{action}"
+        );
+    }
+}
+
+#[test]
+fn document_dispatch_checks_real_window_context_before_mutating_the_workflow() {
+    use vocalnotes_lib::{
+        app::{
+            commands::{DocumentAction, execute_document_action},
+            document::{DocumentError, DocumentErrorCode, DocumentOperation},
+        },
+        platform::desktop::{CommandOrigin, DesktopContext, DocumentEvents},
+    };
+    struct Events;
+    impl DocumentEvents for Events {
+        fn prepare(&self, _: &DocumentOperation) -> Result<(), DocumentError> {
+            Ok(())
+        }
+    }
+    let controller = Controller::new(Probe::new("Note intacte".into()));
+    let context = || DesktopContext {
+        window_label: "main",
+        origin: CommandOrigin::Window,
+        focused: false,
+        preferences_modal: false,
+    };
+    for (label, modal, code) in [
+        ("preferences", false, DocumentErrorCode::Forbidden),
+        ("main", true, DocumentErrorCode::Busy),
+    ] {
+        for action in [
+            json!({"type":"request","action":"quit"}),
+            json!({"type":"focus","area":"instructions"}),
+            json!({"type":"cancel","operationId":"1"}),
+            json!({"type":"ready","operationId":"1","noteId":1,"revision":0,"inputGeneration":1}),
+            json!({"type":"history","direction":"undo","area":"content","transactionId":"undo-1","noteId":1,"baseRevision":0,"inputGeneration":1}),
+        ] {
+            let result = execute_document_action(
+                &controller,
+                &Events,
+                DesktopContext {
+                    window_label: label,
+                    preferences_modal: modal,
+                    ..context()
+                },
+                serde_json::from_value::<DocumentAction>(action).unwrap(),
+            );
+            assert!(matches!(result, Err(error) if error.code == code));
+            assert!(controller.document_operation().unwrap().is_none());
+        }
+    }
+    let request = execute_document_action(
+        &controller,
+        &Events,
+        context(),
+        serde_json::from_value(json!({"type":"request","action":"save"})).unwrap(),
+    )
+    .unwrap();
+    assert!(request.outcome.is_none());
+    let version = request.snapshot.clone();
+    let operation = request.snapshot.document_operation.unwrap();
+    let focused = execute_document_action(
+        &controller,
+        &Events,
+        context(),
+        serde_json::from_value(json!({"type":"focus","area":"context"})).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        controller.document_focused_area().unwrap(),
+        vocalnotes_lib::domain::DictationTarget::Context
+    );
+    assert_eq!(focused.snapshot.source, version.source);
+    assert_eq!(focused.snapshot.revision, version.revision);
+    assert_eq!(focused.snapshot.input_generation, version.input_generation);
+    let stale = execute_document_action(&controller, &Events, context(),
+        serde_json::from_value(json!({"type":"ready","operationId":String::from(operation.operation_id),"noteId":1,"revision":99,"inputGeneration":1})).unwrap());
+    assert!(matches!(stale, Err(error) if error.code == DocumentErrorCode::UnsynchronizedUi));
+    let ready_action = json!({"type":"ready","operationId":String::from(operation.operation_id),"noteId":version.note_id,"revision":version.revision,"inputGeneration":version.input_generation});
+    assert!(
+        execute_document_action(
+            &controller,
+            &Events,
+            context(),
+            serde_json::from_value(ready_action.clone()).unwrap()
+        )
+        .is_ok()
+    );
+    assert!(
+        matches!(execute_document_action(&controller, &Events, context(), serde_json::from_value(ready_action).unwrap()), Err(error) if error.code == DocumentErrorCode::StaleOperation)
+    );
+    let cancelled = execute_document_action(
+        &controller,
+        &Events,
+        context(),
+        serde_json::from_value(
+            json!({"type":"cancel","operationId":String::from(operation.operation_id)}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(cancelled.snapshot.document_operation.is_none());
+    assert_eq!(cancelled.snapshot.source, "Note intacte");
+    assert_eq!(
+        serde_json::to_value(cancelled.outcome).unwrap()["status"],
+        "cancelled"
+    );
+}
+
+#[test]
 fn openai_key_ipc_can_only_return_presence_or_unit_never_the_secret() {
     use std::future::Future;
     use vocalnotes_lib::app::commands::{
         prototype_delete_key, prototype_key_presence, prototype_set_key,
     };
-    fn presence_only(_: impl Future<Output = Result<bool, &'static str>>) {}
-    fn no_value(_: impl Future<Output = Result<(), &'static str>>) {}
-    // Futures are type-checked and dropped without polling or touching a real keyring.
-    presence_only(prototype_key_presence());
-    no_value(prototype_set_key("synthetic-nonsecret-test".into()));
-    no_value(prototype_delete_key());
+    fn presence_only<F, Fut>(_: F)
+    where
+        F: FnOnce(tauri::WebviewWindow) -> Fut,
+        Fut: Future<Output = Result<bool, &'static str>>,
+    {
+    }
+    fn no_value<F, Fut>(_: F)
+    where
+        F: FnOnce(tauri::WebviewWindow) -> Fut,
+        Fut: Future<Output = Result<(), &'static str>>,
+    {
+    }
+    fn set_no_value<F, Fut>(_: F)
+    where
+        F: FnOnce(tauri::WebviewWindow, String) -> Fut,
+        Fut: Future<Output = Result<(), &'static str>>,
+    {
+    }
+    // Function signatures are type-checked without constructing a window or touching a keyring.
+    presence_only(prototype_key_presence);
+    set_no_value(prototype_set_key);
+    no_value(prototype_delete_key);
+}
+
+#[test]
+fn preferences_capability_and_labels_cannot_mutate_notes_or_grant_main_key_access() {
+    use vocalnotes_lib::app::commands::require_label;
+    for label in ["main", "preferences", "other"] {
+        assert_eq!(
+            require_label(label, "preferences").is_ok(),
+            label == "preferences"
+        );
+        assert_eq!(require_label(label, "main").is_ok(), label == "main");
+    }
+    let main: Value = serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
+    let prefs: Value =
+        serde_json::from_str(include_str!("../capabilities/preferences.json")).unwrap();
+    assert_eq!(prefs["windows"], json!(["preferences"]));
+    let permissions = prefs["permissions"].as_array().unwrap();
+    assert_eq!(permissions.len(), 6);
+    for name in [
+        "allow-preferences-get",
+        "allow-preferences-set",
+        "allow-preferences-close",
+        "allow-prototype-set-key",
+        "allow-prototype-delete-key",
+        "allow-prototype-key-presence",
+    ] {
+        assert!(permissions.contains(&json!(name)));
+    }
+    for forbidden in [
+        "allow-prototype-set-key",
+        "allow-prototype-delete-key",
+        "allow-prototype-key-presence",
+        "allow-preferences-set",
+        "allow-prototype-finish-close",
+    ] {
+        assert!(
+            !main["permissions"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(forbidden))
+        );
+    }
+    for action in ["new", "open", "save_copy", "save", "cancel_close"] {
+        assert!(
+            serde_json::from_value::<Command>(
+                json!({"type":action,"path":std::env::temp_dir().join("note.von")})
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]

@@ -36,10 +36,10 @@ describe("frontières du scaffold", () => {
     expect(capability.windows).toEqual(["main"]);
     expect(capability.permissions).toEqual([
       "allow-startup-status", "allow-prototype-snapshot", "allow-prototype-manual",
-      "allow-prototype-action", "allow-prototype-reformat",
-      "allow-prototype-set-key", "allow-prototype-delete-key",
-      "allow-prototype-key-presence", "allow-prototype-finish-close",
-      "allow-preferences-get", "allow-preferences-set",
+      "allow-prototype-action", "allow-document-action",
+      "core:event:allow-listen", "core:event:allow-unlisten",
+      "allow-prototype-reformat",
+      "allow-preferences-get", "allow-preferences-open",
     ]);
     expect(tauri.app.security.csp).toContain("default-src 'self'");
     expect(tauri.app.security.csp).toContain("object-src 'none'");

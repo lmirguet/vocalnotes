@@ -9,7 +9,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let path = std::env::current_dir().unwrap().join(format!(
+        let path = std::env::temp_dir().join(format!(
             ".preferences-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -72,6 +72,26 @@ fn fresh_and_existing_openai_are_not_migrated() {
     assert_eq!(store.get().llm.model, "custom-llm");
     assert_eq!(store.get().last_note, Some(PathBuf::from(note_path)));
     assert_eq!(fs::read_to_string(f.path()).unwrap(), original);
+}
+
+#[test]
+fn remembered_paths_share_the_document_format_and_locality_rules() {
+    let mut store = PreferencesStore::memory();
+    for name in ["note.von", "note.VON", "note.MD", "note.md"] {
+        let path = std::env::temp_dir().join(name);
+        store.remember_note(&path).unwrap();
+        assert_eq!(store.get().last_note.as_ref(), Some(&path));
+    }
+    let previous = store.get();
+    for path in [
+        PathBuf::from(r"\\server\share\note.von"),
+        PathBuf::from("//server/share/note.md"),
+        std::env::temp_dir().join("..").join("note.von"),
+        std::env::temp_dir().join("note.txt"),
+    ] {
+        assert!(store.remember_note(&path).is_err());
+        assert_eq!(store.get(), previous);
+    }
 }
 
 #[test]

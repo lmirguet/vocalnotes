@@ -27,6 +27,7 @@ pub fn run() {
     diagnostics::event("Démarrage diagnostic console D2 ; microphone arrêté");
     // Startup errors are deliberately not formatted with external payloads.
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("local-navigation")
                 .on_navigation(|_, url| {
@@ -51,16 +52,24 @@ pub fn run() {
             app.manage(PrototypeState(
                 platform::controller::Controller::with_preferences(core, preferences),
             ));
+            platform::native_ui::install(app.handle())?;
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() != "main" { return; }
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(preferences) = window.app_handle().get_webview_window("preferences") {
+                    let _ = preferences.destroy();
+                }
+                let state = window.state::<PrototypeState>();
+                state.0.end_preferences(state.0.preferences_token());
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // A native X cannot silently discard an unacknowledged UI proposal.
-                // Finalization is a dedicated command after the UI queue settles.
                 api.prevent_close();
                 let state = window.state::<PrototypeState>();
-                if app::close::begin(&state.0).is_err() {
-                    api.prevent_close();
+                let app = window.app_handle();
+                if let Ok(context) = platform::desktop::main_context(app, platform::desktop::CommandOrigin::Window) {
+                    let _ = app::close::request(&state.0, app, context);
                 }
             }
         })
@@ -69,13 +78,15 @@ pub fn run() {
             prototype_snapshot,
             prototype_manual,
             prototype_action,
+            document_action,
             prototype_reformat,
             prototype_set_key,
             prototype_delete_key,
             prototype_key_presence,
-            prototype_finish_close,
             preferences_get,
-            preferences_set
+            preferences_set,
+            preferences_open,
+            preferences_close
         ])
         .run(tauri::generate_context!());
     if result.is_err() {

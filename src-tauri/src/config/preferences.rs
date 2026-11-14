@@ -65,16 +65,8 @@ impl Preferences {
         self.stt.validate()?;
         self.llm.validate()?;
         if let Some(path) = &self.last_note {
-            if !path.is_absolute()
-                || path.extension().and_then(|s| s.to_str()) != Some("md")
-                || path.as_os_str().len() > 4096
-                || path.to_string_lossy().contains('\0')
-                || path
-                    .components()
-                    .any(|c| matches!(c, std::path::Component::ParentDir))
-            {
-                return Err("Chemin de dernière note invalide.");
-            }
+            crate::storage::markdown_file::validate_note_path(path)
+                .map_err(|error| error.message())?;
         }
         Ok(())
     }
@@ -219,7 +211,18 @@ fn write_atomic(path: &Path, value: &Preferences) -> Result<(), &'static str> {
     let result = (|| {
         file.write_all(&bytes)?;
         file.sync_all()?;
+        #[cfg(not(windows))]
         fs::rename(&temp, path)?;
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+            let from: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+            let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
         #[cfg(unix)]
         fs::File::open(parent)?.sync_all()?;
         Ok::<(), std::io::Error>(())

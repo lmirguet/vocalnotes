@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod capture;
 pub mod controller;
+pub mod desktop;
+pub mod native_ui;
 pub mod lifecycle;
 pub mod mistral;
 pub mod pipeline;
