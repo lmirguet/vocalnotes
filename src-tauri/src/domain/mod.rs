@@ -4,3 +4,4 @@ pub mod note;
 pub mod session;
 
 pub use note::DictationTarget;
+pub mod history;

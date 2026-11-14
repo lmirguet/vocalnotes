@@ -4,6 +4,10 @@ use super::{
     probe::{Probe, Ticket},
     session_devices::{CaptureStream, NativeDevices, SessionDevices, StopCapture},
 };
+use crate::app::document::{
+    DocumentError, DocumentErrorCode, DocumentKind, DocumentOperation, DocumentOutcome,
+    DocumentPhase, DocumentReply, DocumentVersion, DocumentWorkflow, OperationId,
+};
 #[cfg(test)]
 use crate::audio::capture::NativeCapture;
 use crate::audio::normalization::AudioFrame;
@@ -18,11 +22,13 @@ use crate::{
 };
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::Instant;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Duration, sleep};
+#[path = "document_driver.rs"]
+mod document_driver;
 
 struct Active {
     cancel: watch::Sender<bool>,
@@ -47,13 +53,65 @@ pub struct Controller {
     mode_transition: Arc<tokio::sync::Mutex<()>>,
     preferences: Arc<Mutex<Result<PreferencesStore, &'static str>>>,
     frozen_models: Arc<Mutex<Option<ModelPreferences>>>,
-    reformat_busy: Arc<AtomicBool>,
+    reformat_completion: Arc<Mutex<Option<Completion>>>,
+    document: Arc<Mutex<DocumentWorkflow>>,
+    document_changed: watch::Sender<()>,
+    document_work: Arc<Mutex<Option<DocumentWork>>>,
+    document_running: Arc<AtomicBool>,
+    preferences_modal: Arc<AtomicU64>,
+    preferences_generation: Arc<AtomicU64>,
+    preferences_writing: Arc<AtomicU64>,
+    preferences_closing: Arc<AtomicU64>,
 }
 
-struct ReformatGuard(Arc<AtomicBool>);
+pub struct PreferencesWriteGuard {
+    controller: Controller,
+    token: u64,
+}
+impl Drop for PreferencesWriteGuard {
+    fn drop(&mut self) {
+        let _ = self.controller.preferences_writing.compare_exchange(
+            self.token,
+            0,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
+
+type Completion = watch::Receiver<Option<Result<(), &'static str>>>;
+
+#[derive(Clone)]
+struct DocumentWork {
+    operation_id: OperationId,
+    capture: Option<Completion>,
+    reformat: Option<Completion>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum DocumentDrain {
+    Drained,
+    Cancelled,
+}
+
+struct ReformatGuard {
+    completed: watch::Sender<Option<Result<(), &'static str>>>,
+    finished: bool,
+}
+
+impl ReformatGuard {
+    fn finish(mut self, result: Result<(), &'static str>) {
+        self.completed.send_replace(Some(result));
+        self.finished = true;
+    }
+}
+
 impl Drop for ReformatGuard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+        if !self.finished {
+            self.completed
+                .send_replace(Some(Err("Reformulation interrompue ; note conservée.")));
+        }
     }
 }
 
@@ -75,9 +133,327 @@ impl Controller {
             mode_transition: Arc::new(tokio::sync::Mutex::new(())),
             preferences: Arc::new(Mutex::new(preferences)),
             frozen_models: Arc::new(Mutex::new(None)),
-            reformat_busy: Arc::new(AtomicBool::new(false)),
+            reformat_completion: Arc::new(Mutex::new(None)),
+            document: Arc::new(Mutex::new(DocumentWorkflow::default())),
+            document_changed: watch::channel(()).0,
+            document_work: Arc::new(Mutex::new(None)),
+            document_running: Arc::new(AtomicBool::new(false)),
+            preferences_modal: Arc::new(AtomicU64::new(0)),
+            preferences_generation: Arc::new(AtomicU64::new(0)),
+            preferences_writing: Arc::new(AtomicU64::new(0)),
+            preferences_closing: Arc::new(AtomicU64::new(0)),
         }
     }
+
+    pub fn request_document(
+        &self,
+        action: DocumentKind,
+    ) -> Result<DocumentOperation, DocumentError> {
+        let mut workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if workflow.is_closing()
+            || self.is_preferences_modal()
+            || (workflow.active().is_none() && self.document_running.load(Ordering::Acquire))
+        {
+            return Err(DocumentErrorCode::Busy.error());
+        }
+        // Keep session teardown behind request registration so its completion
+        // cannot disappear between the version read and the captured waiters.
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let reformat = self
+            .reformat_completion
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let capture_completion = active.as_ref().map(|session| session.completed.clone());
+        let reformat_completion = reformat
+            .as_ref()
+            .filter(|completion| completion.borrow().is_none())
+            .cloned();
+        let version = {
+            let core = self
+                .core
+                .lock()
+                .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+            DocumentVersion::from(&core.snapshot())
+        };
+        let operation = workflow.request(action, version)?;
+        let mut work = self
+            .document_work
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if work
+            .as_ref()
+            .is_none_or(|work| work.operation_id != operation.operation_id)
+        {
+            *work = Some(DocumentWork {
+                operation_id: operation.operation_id,
+                capture: capture_completion,
+                reformat: reformat_completion,
+            });
+        }
+        Ok(operation)
+    }
+
+    pub fn document_ready(
+        &self,
+        id: OperationId,
+        acknowledgement: DocumentVersion,
+    ) -> Result<(), DocumentError> {
+        let mut workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let core = self
+            .core
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        workflow.ready(id, acknowledgement, DocumentVersion::from(&core.snapshot()))
+    }
+
+    pub fn edit_core<T>(
+        &self,
+        work: impl FnOnce(&mut Probe) -> Result<T, &'static str>,
+    ) -> Result<T, &'static str> {
+        let workflow = self.document.lock().map_err(|_| "Cœur indisponible.")?;
+        if workflow.is_closing()
+            || self.is_preferences_modal()
+            || workflow
+                .active()
+                .is_some_and(|op| op.phase != DocumentPhase::AwaitingUi)
+        {
+            return Err("Une opération documentaire est déjà en cours.");
+        }
+        let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+        work(&mut core)
+    }
+
+    pub fn history_action(
+        &self,
+        id: String,
+        version: DocumentVersion,
+        area: DictationTarget,
+        redo: bool,
+    ) -> Result<(), DocumentError> {
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if workflow.is_closing() || self.is_preferences_modal() || workflow.active().is_some() {
+            return Err(DocumentErrorCode::Busy.error());
+        }
+        self.core
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .history_action(id, version, area, redo)
+    }
+
+    pub fn cancel_document(&self, id: OperationId) -> Result<DocumentOutcome, DocumentError> {
+        let mut workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let replaces = workflow
+            .active()
+            .is_some_and(|operation| operation.action.replaces_document());
+        let outcome = workflow.cancel(id)?;
+        if replaces {
+            self.stop_native(
+                false,
+                "Opération annulée ; note conservée, microphone arrêté.",
+                true,
+            )
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        }
+        drop(workflow);
+        self.document_changed.send_replace(());
+        Ok(outcome)
+    }
+
+    pub fn document_operation(&self) -> Result<Option<DocumentOperation>, DocumentError> {
+        Ok(self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .active()
+            .cloned())
+    }
+
+    pub fn finish_quit(
+        &self,
+        id: OperationId,
+        destroy: impl FnOnce() -> Result<(), ()>,
+    ) -> Result<Snapshot, DocumentError> {
+        self.document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .authorize_close(id)?;
+        if destroy().is_err() {
+            self.document
+                .lock()
+                .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+                .close_failed(id);
+            return Err(DocumentErrorCode::WindowFailed.error());
+        }
+        self.snapshot()
+    }
+
+    pub fn fail_document(
+        &self,
+        id: OperationId,
+        error: DocumentError,
+    ) -> Result<DocumentOutcome, DocumentError> {
+        let mut workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let replaces = workflow
+            .active()
+            .is_some_and(|operation| operation.action.replaces_document());
+        let outcome = workflow.fail(id, error)?;
+        if replaces {
+            self.stop_native(
+                false,
+                "Opération abandonnée ; note conservée, microphone arrêté.",
+                true,
+            )
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        }
+        drop(workflow);
+        self.document_changed.send_replace(());
+        Ok(outcome)
+    }
+
+    pub fn snapshot(&self) -> Result<Snapshot, DocumentError> {
+        Ok(self.document_reply()?.snapshot)
+    }
+
+    pub fn document_focus(&self, area: DictationTarget) -> Result<(), DocumentError> {
+        self.document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .focus(area);
+        Ok(())
+    }
+
+    pub fn begin_preferences(&self) -> Result<Option<u64>, DocumentError> {
+        let _transition = self
+            .mode_transition
+            .try_lock()
+            .map_err(|_| DocumentErrorCode::Busy.error())?;
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if workflow.is_closing()
+            || workflow.active().is_some()
+            || self.document_running.load(Ordering::Acquire)
+        {
+            return Err(DocumentErrorCode::Busy.error());
+        }
+        if self.is_preferences_modal() {
+            return Ok(None);
+        }
+        let token = self
+            .preferences_generation
+            .load(Ordering::Acquire)
+            .checked_add(1)
+            .ok_or_else(|| DocumentErrorCode::SizeLimit.error())?;
+        self.preferences_generation.store(token, Ordering::Release);
+        self.preferences_modal.store(token, Ordering::Release);
+        Ok(Some(token))
+    }
+
+    pub fn end_preferences(&self, token: u64) -> bool {
+        token != 0
+            && self
+                .preferences_modal
+                .compare_exchange(token, 0, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+    }
+    pub fn preferences_token(&self) -> u64 {
+        self.preferences_modal.load(Ordering::Acquire)
+    }
+
+    pub fn reserve_preferences_write(&self) -> Result<PreferencesWriteGuard, &'static str> {
+        let _workflow = self
+            .document
+            .lock()
+            .map_err(|_| "Coordinateur indisponible.")?;
+        let token = self.preferences_token();
+        if token == 0
+            || self.preferences_closing.load(Ordering::Acquire) == token
+            || self
+                .preferences_writing
+                .compare_exchange(0, token, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return Err("Préférences indisponibles ou écriture en cours.");
+        }
+        Ok(PreferencesWriteGuard {
+            controller: self.clone(),
+            token,
+        })
+    }
+
+    pub fn preferences_write_pending(&self, token: u64) -> bool {
+        token != 0 && self.preferences_writing.load(Ordering::Acquire) == token
+    }
+    pub fn begin_preferences_close(&self, token: u64) -> Result<bool, DocumentError> {
+        let _workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if token == 0 || token != self.preferences_token() {
+            return Ok(false);
+        }
+        if self.preferences_write_pending(token) {
+            return Err(DocumentErrorCode::Busy.error());
+        }
+        self.preferences_closing.store(token, Ordering::Release);
+        Ok(true)
+    }
+    pub fn is_preferences_modal(&self) -> bool {
+        self.preferences_token() != 0
+    }
+
+    pub fn document_focused_area(&self) -> Result<DictationTarget, DocumentError> {
+        Ok(self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .focused_area())
+    }
+
+    pub fn document_reply(&self) -> Result<DocumentReply, DocumentError> {
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let core = self
+            .core
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        let mut snapshot = core.snapshot();
+        workflow.fill_snapshot(&mut snapshot);
+        Ok(DocumentReply {
+            snapshot,
+            outcome: workflow.last_outcome().cloned(),
+        })
+    }
+
+    pub fn attach_document_state(&self, snapshot: &mut Snapshot) -> Result<(), DocumentError> {
+        self.document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .fill_snapshot(snapshot);
+        Ok(())
+    }
+
     pub fn preferences(&self) -> Result<Preferences, &'static str> {
         Ok(self
             .preferences
@@ -122,20 +498,24 @@ impl Controller {
             .ok()
             .and_then(|core| core.saved_destination());
         if let Some(path) = path {
-            let result = self
-                .preferences
-                .lock()
-                .map_err(|_| "Préférences indisponibles.")
-                .and_then(|mut store| store.as_mut().map_err(|e| *e)?.remember_note(&path));
-            if result.is_err() {
-                crate::diagnostics::event(
-                    "Préférences : dernière destination non mémorisée ; note sauvegardée.",
+            self.remember_document_path(&path);
+        }
+    }
+
+    pub(super) fn remember_document_path(&self, path: &std::path::Path) {
+        let result = self
+            .preferences
+            .lock()
+            .map_err(|_| "Préférences indisponibles.")
+            .and_then(|mut store| store.as_mut().map_err(|e| *e)?.remember_note(path));
+        if result.is_err() {
+            crate::diagnostics::event(
+                "Préférences : dernière destination non mémorisée ; note sauvegardée.",
+            );
+            if let Ok(mut core) = self.core.lock() {
+                core.message(
+                    "Note sauvegardée ; mémorisation de la dernière destination impossible.",
                 );
-                if let Ok(mut core) = self.core.lock() {
-                    core.message(
-                        "Note sauvegardée ; mémorisation de la dernière destination impossible.",
-                    );
-                }
             }
         }
     }
@@ -145,21 +525,14 @@ impl Controller {
         note_id: u64,
         base_revision: u64,
     ) -> Result<Snapshot, &'static str> {
-        if self
-            .reformat_busy
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err("Une reformulation est déjà en cours.");
-        }
-        let _busy = ReformatGuard(self.reformat_busy.clone());
-        let request = {
-            let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
-            let request = ReformatRequest::prepare(&core, note_id, base_revision)?;
-            core.reformat_started();
-            request
-        };
+        let completion = self.begin_reformat()?;
         let result: Result<Snapshot, &'static str> = async {
+            let request = {
+                let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+                let request = ReformatRequest::prepare(&core, note_id, base_revision)?;
+                core.reformat_started();
+                request
+            };
             let selection = self.preferences()?.llm;
             let interpreter = OpenAIInterpreter::selected(&selection)?;
             let reply = request.reformat(&interpreter).await?;
@@ -173,32 +546,88 @@ impl Controller {
                 core.message(message);
             }
         }
+        completion.finish(result.as_ref().map(|_| ()).map_err(|message| *message));
         result
     }
 
+    fn begin_reformat(&self) -> Result<ReformatGuard, &'static str> {
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| "Coordinateur indisponible.")?;
+        if workflow.is_closing() || self.is_preferences_modal() || workflow.active().is_some() {
+            return Err("Une opération documentaire est en cours.");
+        }
+        let mut active = self
+            .reformat_completion
+            .lock()
+            .map_err(|_| "Reformulation indisponible.")?;
+        if active
+            .as_ref()
+            .is_some_and(|completion| completion.borrow().is_none())
+        {
+            return Err("Une reformulation est déjà en cours.");
+        }
+        let (completed, receiver) = watch::channel(None);
+        *active = Some(receiver);
+        Ok(ReformatGuard {
+            completed,
+            finished: false,
+        })
+    }
+
+    pub fn user_stop(&self, pause: bool, message: &str) -> Result<Snapshot, &'static str> {
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| "Coordinateur indisponible.")?;
+        if workflow.is_closing() || self.is_preferences_modal() || workflow.active().is_some() {
+            return Err("Une opération documentaire est en cours.");
+        }
+        self.stop_native(pause, message, false)?;
+        Ok(self
+            .core
+            .lock()
+            .map_err(|_| "Cœur indisponible.")?
+            .snapshot())
+    }
+
     pub fn stop(&self, pause: bool, message: &str) {
+        if self.stop_native(pause, message, false).is_err() {
+            crate::diagnostics::event("Arrêt incomplet : état natif indisponible.");
+        }
+    }
+
+    fn stop_native(
+        &self,
+        pause: bool,
+        message: &str,
+        invalidate_inputs: bool,
+    ) -> Result<(), &'static str> {
         crate::diagnostics::event(if pause {
             "Commande : pause"
         } else {
             "Commande : arrêt/invalidation"
         });
         // Same lock order for start, device installation and stop.
-        if let Ok(mut active) = self.active.lock() {
-            if let Some(session) = active.take() {
-                session.opening_stop.store(true, Ordering::Release);
-                if let Some(capture) = session.capture {
-                    capture.stop();
-                }
-                let _ = session.cancel.send(true);
+        let mut active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
+        if let Some(session) = active.take() {
+            session.opening_stop.store(true, Ordering::Release);
+            if let Some(capture) = session.capture {
+                capture.stop();
             }
-            if let Ok(mut core) = self.core.lock() {
-                if pause {
-                    core.pause();
-                } else {
-                    core.stop(message);
-                }
-            }
+            let _ = session.cancel.send(true);
         }
+        let mut core = self.core.lock().map_err(|_| "Cœur indisponible.")?;
+        if pause {
+            core.pause();
+        } else {
+            core.stop(message);
+        }
+        if invalidate_inputs {
+            core.invalidate_document_inputs();
+        }
+        Ok(())
     }
 
     fn stop_current(&self, ticket: &Ticket, pause: bool, message: &'static str, failure: bool) {
@@ -257,7 +686,7 @@ impl Controller {
             .await
     }
 
-    async fn stop_active_mode(&self, message: &'static str) -> Result<bool, &'static str> {
+    fn stop_capture(&self) -> Result<Option<Completion>, &'static str> {
         let active = {
             let active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
             active.as_ref().map(|session| {
@@ -269,8 +698,8 @@ impl Controller {
                 )
             })
         };
-        let Some((capture, cancel, opening_stop, mut completed)) = active else {
-            return Ok(false);
+        let Some((capture, cancel, opening_stop, completed)) = active else {
+            return Ok(None);
         };
         if let Some(capture) = capture {
             capture.stop();
@@ -278,19 +707,85 @@ impl Controller {
             opening_stop.store(true, Ordering::Release);
             let _ = cancel.send(true);
         }
-        if completed.borrow().is_none() {
-            completed
-                .changed()
-                .await
-                .map_err(|_| "Arrêt du microphone non confirmé.")?;
+        Ok(Some(completed))
+    }
+
+    async fn drain_capture(&self) -> Result<bool, &'static str> {
+        let completion = self.stop_capture()?;
+        let had_active = completion.is_some();
+        wait_completion(completion).await?;
+        Ok(had_active)
+    }
+
+    async fn stop_active_mode(&self, message: &'static str) -> Result<bool, &'static str> {
+        let had_active = self.drain_capture().await?;
+        if had_active {
+            self.stop_native(false, message, false)?;
         }
-        match *completed.borrow() {
-            Some(Ok(())) => {}
-            Some(Err(message)) => return Err(message),
-            None => return Err("Arrêt du microphone non confirmé."),
+        Ok(had_active)
+    }
+
+    pub async fn drain_document(&self, id: OperationId) -> Result<DocumentDrain, DocumentError> {
+        let _transition = self.mode_transition.lock().await;
+        let mut changed = self.document_changed.subscribe();
+        {
+            let mut workflow = self
+                .document
+                .lock()
+                .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+            if let Some(outcome) = document_interruption(&workflow, id)? {
+                return Ok(outcome);
+            }
+            let core = self
+                .core
+                .lock()
+                .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+            workflow.transition(id, core.snapshot().note_id, DocumentPhase::Draining)?;
         }
-        self.stop(false, message);
-        Ok(true)
+        let work = self
+            .document_work
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?
+            .as_ref()
+            .filter(|work| work.operation_id == id)
+            .cloned()
+            .ok_or_else(|| DocumentErrorCode::StaleOperation.error())?;
+        let draining = async {
+            let current_capture = self.stop_capture()?;
+            tokio::try_join!(
+                wait_completion(work.capture.or(current_capture)),
+                wait_completion(work.reformat)
+            )?;
+            Ok::<(), &'static str>(())
+        };
+        tokio::pin!(draining);
+        let result = loop {
+            tokio::select! {
+                biased;
+                _ = changed.changed() => {
+                    let workflow = self.document.lock().map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+                    if let Some(outcome) = document_interruption(&workflow, id)? { return Ok(outcome); }
+                }
+                result = &mut draining => break result,
+            }
+        };
+        let mut workflow = self
+            .document
+            .lock()
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if let Some(outcome) = document_interruption(&workflow, id)? {
+            return Ok(outcome);
+        }
+        self.stop_native(false, "Traitements terminés ; microphone arrêté.", true)
+            .map_err(|_| DocumentErrorCode::CoreUnavailable.error())?;
+        if result.is_err() {
+            let error = DocumentErrorCode::DrainFailed.error();
+            workflow.fail(id, error.clone())?;
+            drop(workflow);
+            self.document_changed.send_replace(());
+            return Err(error);
+        }
+        Ok(DocumentDrain::Drained)
     }
 
     pub async fn set_dictation_mode_with_devices<D: SessionDevices>(
@@ -299,6 +794,15 @@ impl Controller {
         devices: D,
     ) -> Result<Snapshot, &'static str> {
         let _transition = self.mode_transition.lock().await;
+        {
+            let workflow = self
+                .document
+                .lock()
+                .map_err(|_| "Coordinateur indisponible.")?;
+            if workflow.is_closing() || self.is_preferences_modal() || workflow.active().is_some() {
+                return Err("Une opération documentaire est en cours.");
+            }
+        }
         let has_active = {
             let active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
             active.is_some()
@@ -349,6 +853,13 @@ impl Controller {
         resume: bool,
         devices: D,
     ) -> Result<(), &'static str> {
+        let workflow = self
+            .document
+            .lock()
+            .map_err(|_| "Coordinateur indisponible.")?;
+        if workflow.is_closing() || self.is_preferences_modal() || workflow.active().is_some() {
+            return Err("Une opération documentaire est en cours.");
+        }
         let mut active = self.active.lock().map_err(|_| "Contrôleur indisponible.")?;
         if active.is_some() {
             return Err("Session déjà active ou en initialisation.");
@@ -637,6 +1148,41 @@ impl Controller {
     }
 }
 
+async fn wait_completion(completion: Option<Completion>) -> Result<(), &'static str> {
+    if let Some(mut completion) = completion {
+        if completion.borrow().is_none() {
+            completion
+                .changed()
+                .await
+                .map_err(|_| "Fin du traitement non confirmée.")?;
+        }
+        return (*completion.borrow()).ok_or("Fin du traitement non confirmée.")?;
+    }
+    Ok(())
+}
+
+fn document_interruption(
+    workflow: &DocumentWorkflow,
+    id: OperationId,
+) -> Result<Option<DocumentDrain>, DocumentError> {
+    if workflow
+        .active()
+        .is_some_and(|operation| operation.operation_id == id)
+    {
+        return Ok(None);
+    }
+    match workflow.last_outcome() {
+        Some(DocumentOutcome::Cancelled { operation_id }) if *operation_id == id => {
+            Ok(Some(DocumentDrain::Cancelled))
+        }
+        Some(DocumentOutcome::Failed {
+            operation_id,
+            error,
+        }) if *operation_id == id => Err(error.clone()),
+        _ => Err(DocumentErrorCode::StaleOperation.error()),
+    }
+}
+
 async fn capture_frames(
     capture: Box<dyn CaptureStream>,
     frames: mpsc::Sender<AudioFrame>,
@@ -657,6 +1203,278 @@ async fn capture_frames(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn save_cancellation_keeps_capture_running_and_new_work_is_blocked_by_document_waits() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let devices = FakeDevices::default();
+        controller
+            .start_with_devices(false, devices.clone())
+            .unwrap();
+        devices.wait_until_listening(&controller).await;
+        let before = controller.snapshot().unwrap();
+        let operation = controller.request_document(DocumentKind::Save).unwrap();
+        assert!(controller.begin_reformat().is_err());
+        controller.cancel_document(operation.operation_id).unwrap();
+        assert_eq!(
+            controller.snapshot().unwrap().input_generation,
+            before.input_generation
+        );
+        assert_eq!(controller.snapshot().unwrap().mode, "voice");
+        assert_eq!(devices.stops.load(Ordering::SeqCst), 0);
+        let operation = prepared_document(&controller);
+        assert!(
+            controller
+                .start_with_devices(false, devices.clone())
+                .is_err()
+        );
+        controller.cancel_document(operation).unwrap();
+        assert_eq!(controller.snapshot().unwrap().mode, "manual");
+    }
+
+    #[tokio::test]
+    async fn capture_failure_during_ui_preparation_is_not_lost_before_drain() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let devices = FakeDevices {
+            fail_finalize: true,
+            ..Default::default()
+        };
+        controller
+            .start_with_devices(false, devices.clone())
+            .unwrap();
+        devices.wait_until_listening(&controller).await;
+        devices.push_speech();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while devices.passage_starts.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let operation = controller.request_document(DocumentKind::Quit).unwrap();
+        let completion = controller
+            .active
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .completed
+            .clone();
+        controller.stop_capture().unwrap();
+        assert!(wait_completion(Some(completion)).await.is_err());
+        let version = DocumentVersion::from(&controller.snapshot().unwrap());
+        controller
+            .document_ready(operation.operation_id, version)
+            .unwrap();
+        let result = controller.drain_document(operation.operation_id).await;
+        assert!(matches!(result, Err(error) if error.code == DocumentErrorCode::DrainFailed));
+        assert_eq!(controller.snapshot().unwrap().source, "note");
+    }
+
+    #[tokio::test]
+    async fn reformat_failure_during_ui_preparation_survives_a_joined_request() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let reformat = controller.begin_reformat().unwrap();
+        let operation = controller.request_document(DocumentKind::Quit).unwrap();
+        reformat.finish(Err("synthetic failure before ready"));
+        assert_eq!(
+            controller.request_document(DocumentKind::Save).unwrap(),
+            operation
+        );
+        let version = DocumentVersion::from(&controller.snapshot().unwrap());
+        controller
+            .document_ready(operation.operation_id, version)
+            .unwrap();
+        let result = controller.drain_document(operation.operation_id).await;
+        assert!(matches!(result, Err(error) if error.code == DocumentErrorCode::DrainFailed));
+        assert_eq!(controller.snapshot().unwrap().source, "note");
+    }
+
+    fn prepared_document(controller: &Controller) -> OperationId {
+        let operation = controller.request_document(DocumentKind::Quit).unwrap();
+        let version = DocumentVersion::from(&controller.snapshot().unwrap());
+        controller
+            .document_ready(operation.operation_id, version)
+            .unwrap();
+        operation.operation_id
+    }
+
+    #[tokio::test]
+    async fn document_drain_accepts_final_speech_and_waits_for_the_started_reformat() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let devices = FakeDevices::default();
+        controller
+            .start_with_devices(false, devices.clone())
+            .unwrap();
+        devices.wait_until_listening(&controller).await;
+        devices.push_speech();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while devices.passage_starts.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let ticket = controller.core.lock().unwrap().ticket();
+        let reformat = controller.begin_reformat().unwrap();
+        let capture_completion = controller
+            .active
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .completed
+            .clone();
+        let operation = prepared_document(&controller);
+        let mut drain = Box::pin(controller.drain_document(operation));
+        tokio::select! {
+            _ = &mut drain => panic!("drain finished before the reformat"),
+            completion = tokio::time::timeout(
+                Duration::from_secs(2),
+                wait_completion(Some(capture_completion)),
+            ) => completion.unwrap().unwrap(),
+        }
+        assert!(devices.stops.load(Ordering::SeqCst) > 0);
+        assert!(controller.core.try_lock().is_ok());
+        assert!(controller.core.lock().unwrap().same_session(&ticket));
+        assert!(
+            controller
+                .core
+                .lock()
+                .unwrap()
+                .snapshot()
+                .source
+                .contains("Texte final.")
+        );
+        reformat.finish(Ok(()));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), drain)
+                .await
+                .unwrap()
+                .unwrap(),
+            DocumentDrain::Drained
+        );
+        let snapshot = controller.snapshot().unwrap();
+        assert_eq!(snapshot.mode, "manual");
+        assert!(snapshot.source.contains("Texte final."));
+        assert!(snapshot.dirty);
+        assert_eq!(snapshot.llm_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn cancelling_document_drain_invalidates_a_late_reformat_without_losing_the_note() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let reformat = controller.begin_reformat().unwrap();
+        let version = controller.snapshot().unwrap();
+        let operation = prepared_document(&controller);
+        let mut drain = Box::pin(controller.drain_document(operation));
+        tokio::select! {
+            _ = &mut drain => panic!("drain finished before cancellation"),
+            _ = sleep(Duration::from_millis(5)) => {}
+        }
+        controller.cancel_document(operation).unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), drain)
+                .await
+                .unwrap()
+                .unwrap(),
+            DocumentDrain::Cancelled
+        );
+        assert!(
+            controller
+                .core
+                .lock()
+                .unwrap()
+                .apply_reformat(
+                    version.note_id,
+                    version.revision,
+                    version.input_generation,
+                    &[],
+                    "late".into(),
+                    "test"
+                )
+                .is_err()
+        );
+        reformat.finish(Ok(()));
+        let snapshot = controller.snapshot().unwrap();
+        assert_eq!(snapshot.source, "note");
+        assert_eq!(snapshot.mode, "manual");
+        assert!(snapshot.document_operation.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_reformat_abandons_document_drain_and_dropping_a_job_signals_failure() {
+        for dropped in [false, true] {
+            let controller = Controller::new(Probe::new("note".into()));
+            let reformat = controller.begin_reformat().unwrap();
+            let operation = prepared_document(&controller);
+            let mut drain = Box::pin(controller.drain_document(operation));
+            tokio::select! {
+                _ = &mut drain => panic!("drain finished before completion"),
+                _ = sleep(Duration::from_millis(5)) => {}
+            }
+            if dropped {
+                drop(reformat);
+            } else {
+                reformat.finish(Err("synthetic failure"));
+            }
+            let result = tokio::time::timeout(Duration::from_secs(2), drain)
+                .await
+                .unwrap();
+            assert!(matches!(result, Err(error) if error.code == DocumentErrorCode::DrainFailed));
+            let snapshot = controller.snapshot().unwrap();
+            assert_eq!(snapshot.source, "note");
+            assert_eq!(snapshot.mode, "manual");
+            assert!(snapshot.document_operation.is_none());
+            assert_eq!(
+                snapshot.document_error.unwrap().code,
+                DocumentErrorCode::DrainFailed
+            );
+        }
+    }
+
+    #[test]
+    fn document_requests_from_clones_share_one_operation_without_holding_core() {
+        let controller = Controller::new(Probe::new("note".into()));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let workers: Vec<_> = [DocumentKind::Save, DocumentKind::Quit]
+            .into_iter()
+            .map(|kind| {
+                let controller = controller.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    controller.request_document(kind).unwrap()
+                })
+            })
+            .collect();
+        let operations: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(operations[0], operations[1]);
+        assert!(controller.core.try_lock().is_ok());
+        controller
+            .cancel_document(operations[0].operation_id)
+            .unwrap();
+        assert!(controller.document_operation().unwrap().is_none());
+    }
+
+    #[test]
+    fn document_snapshot_recovers_a_missed_operation_and_clears_it_after_cancellation() {
+        let controller = Controller::new(Probe::new("texte local".into()));
+        let operation = controller.request_document(DocumentKind::Quit).unwrap();
+        let snapshot = controller.snapshot().unwrap();
+        assert_eq!(snapshot.source, "texte local");
+        assert_eq!(snapshot.document_operation, Some(operation.clone()));
+        let dispatch = serde_json::to_value(&operation).unwrap();
+        assert!(!dispatch.to_string().contains("texte local"));
+        controller.cancel_document(operation.operation_id).unwrap();
+        let snapshot = controller.snapshot().unwrap();
+        assert!(snapshot.document_operation.is_none());
+        assert!(snapshot.document_error.is_none());
+        assert_eq!(snapshot.source, "texte local");
+    }
 
     fn active(controller: &Controller) -> (Ticket, watch::Receiver<bool>, Arc<AtomicBool>) {
         let mut core = controller.core.lock().unwrap();

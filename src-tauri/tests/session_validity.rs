@@ -144,7 +144,10 @@ fn open_reopen_and_failed_open_are_irreversible_barriers() {
         .open(&path)
         .unwrap();
     std::io::Write::write_all(&mut file, b"texte").unwrap();
-    let mut note = Note::new("texte".into());
+    file.sync_all().unwrap();
+    drop(file);
+    let mut note = Note::new(String::new());
+    note.loaded("texte".into());
     for _ in 0..2 {
         note.start_voice(false).unwrap();
         let old = note.voice_ticket(1).unwrap();

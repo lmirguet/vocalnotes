@@ -76,7 +76,7 @@ fn file_actions_report_refusal_and_success_and_new_invalidates_old_identity() {
     );
     assert_eq!(
         core.save_copy(std::path::Path::new("")).unwrap_err(),
-        "Chemin absolu vers un fichier .md requis."
+        "Chemin absolu local sans traversal requis (4096 octets maximum)."
     );
     assert_eq!(core.snapshot().source, before.source);
     assert!(core.snapshot().dirty);
@@ -90,11 +90,13 @@ fn file_actions_report_refusal_and_success_and_new_invalidates_old_identity() {
     );
     assert!(core.save_copy(&path).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), b"un\n\ndeux");
+    // A failed exclusive installation deliberately retains its prepared candidate.
+    assert!(std::fs::read_dir(&dir).unwrap().count() > 1);
     core.new_note().unwrap();
     assert_eq!(core.snapshot().source, "");
     assert!(core.snapshot().message.contains("Nouvelle note créée"));
     std::fs::remove_file(path).unwrap();
-    std::fs::remove_dir(dir).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 fn proposal(
@@ -309,6 +311,7 @@ fn exclusive_note_save_never_overwrites_existing_content() {
         std::fs::read_to_string(&path).unwrap(),
         "contenu synthétique"
     );
+    assert!(std::fs::read_dir(&dir).unwrap().count() > 1);
     std::fs::remove_file(&path).unwrap();
-    std::fs::remove_dir(&dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

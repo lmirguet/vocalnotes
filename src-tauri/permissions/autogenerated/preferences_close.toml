@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preferences-close"
+description = "Enables the preferences_close command without any pre-configured scope."
+commands.allow = ["preferences_close"]
+
+[[permission]]
+identifier = "deny-preferences-close"
+description = "Denies the preferences_close command without any pre-configured scope."
+commands.deny = ["preferences_close"]

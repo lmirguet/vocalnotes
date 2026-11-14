@@ -146,7 +146,7 @@ main[data-desktop-shell] > [aria-label="Saisie non acceptée récupérable en m�
   margin-top: 6px;
 }
 
-.toolbar-stack button, .menu-panel button {
+.toolbar-stack button {
   min-height: 26px;
   padding: 2px 8px;
   color: inherit;
@@ -155,12 +155,11 @@ main[data-desktop-shell] > [aria-label="Saisie non acceptée récupérable en m�
   border-radius: 0;
 }
 
-.toolbar-stack button:hover, .menu-panel button:hover {
+.toolbar-stack button:hover {
   background: #e8f1fb;
 }
 
-button:focus-visible, input:focus-visible, textarea:focus-visible,
-.menu-panel :focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible {
   outline: 2px solid #005fb8;
   outline-offset: 1px;
 }
@@ -262,45 +261,10 @@ main[data-desktop-shell] > [role="status"] {
   font-weight: 400;
 }
 
-.menu-bar {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 2px;
-  margin: 0;
-  padding: 2px 5px;
-  background: #f3f3f3;
-  border-bottom: 1px solid #b8b8b8;
-}
-.menu-group { position: relative; }
-.menu-trigger {
-  min-height: 26px;
-  padding: 2px 8px;
-  border: 1px solid transparent;
-  background: transparent;
-}
-.menu-trigger:hover, .menu-trigger[aria-expanded="true"] { background: #e8f1fb; border-color: #8a8a8a; }
-.menu-panel {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline-start: 0;
-  z-index: 10;
-  width: min(23rem, calc(100vw - 5rem));
-  padding: 6px;
-  background: white;
-  border: 1px solid #8a8a8a;
-  box-shadow: 0 3px 8px #0003;
-}
-.menu-panel[hidden] { display: none; }
-.menu-panel button, .menu-panel input { display: block; box-sizing: border-box; width: 100%; margin-block: .3rem; }
-.menu-panel button { text-align: start; padding: .35rem .5rem; }
-.menu-panel p { margin: .3rem; }
 @media (max-height: 560px) {
   .context-panel { flex-basis: 5rem; min-height: 4rem; }
   .note-workspace { padding-block: 3px; }
   .ProseMirror { padding: 8px; }
-}
-@media (max-width: 40rem) {
-  .menu-group:last-child .menu-panel { inset-inline-start: auto; inset-inline-end: 0; }
 }
 button, input, textarea { font: inherit; }
 [data-opaque] { border: 1px dashed #666; background: #eee; padding: .7rem; white-space: pre-wrap; }
@@ -327,3 +291,16 @@ button, input, textarea { font: inherit; }
   outline: 2px solid #805d00;
   outline-offset: 2px;
 }
+.preferences-page {
+  font: menu;
+  color-scheme: light dark;
+  color: CanvasText;
+  background: Canvas;
+  padding: 1rem;
+  max-width: 42rem;
+}
+.preferences-page input, .preferences-page select, .preferences-page button {
+  font: inherit;
+}
+.preferences-page :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+.preferences-page fieldset { margin-block: .6rem; }

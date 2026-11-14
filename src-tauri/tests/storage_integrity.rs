@@ -29,8 +29,384 @@ impl Drop for Fixture {
     }
 }
 
+fn write_candidate(
+    path: PathBuf,
+    source: &str,
+    expected: Option<vocalnotes_lib::storage::markdown_file::DiskVersion>,
+) -> vocalnotes_lib::storage::markdown_file::WriteCandidate {
+    use vocalnotes_lib::{
+        app::document::{DocumentFormat, DocumentVersion},
+        storage::markdown_file::{WriteCandidate, WriteContent},
+    };
+    WriteCandidate::new(
+        WriteContent::MarkdownExport(source.into()),
+        path,
+        DocumentFormat::Markdown,
+        DocumentVersion {
+            note_id: 7,
+            revision: 9,
+            input_generation: 11,
+        },
+        expected,
+    )
+    .ok()
+    .unwrap()
+}
+
 #[test]
-#[cfg(target_os = "linux")]
+fn common_writer_installs_the_exact_preparation_and_returns_its_candidate() {
+    use vocalnotes_lib::storage::markdown_file::{DiskVersion, WriteResult};
+    let f = Fixture::new();
+    let path = f.path("candidate.md");
+    let source = "<!-- vocalnotes:intention:body -->\r\ne\u{301}\r\n";
+    let preparation = write_candidate(path.clone(), source, None)
+        .prepare()
+        .ok()
+        .unwrap();
+    let prepared_path = preparation.path().to_owned();
+    let prepared_version = DiskVersion::observe(&prepared_path).unwrap();
+    let WriteResult::Saved { candidate, version } = preparation.install() else {
+        panic!("exclusive installation must succeed");
+    };
+    assert!(!prepared_path.exists());
+    assert_eq!(version, prepared_version);
+    assert_eq!(DiskVersion::observe(&path).unwrap(), version);
+    assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+    assert_eq!(candidate.note_version().revision, 9);
+    assert_eq!(candidate.path(), path);
+
+    let WriteResult::Saved { version: next, .. } =
+        write_candidate(path.clone(), "next\r\n", Some(version.clone()))
+            .prepare()
+            .ok()
+            .unwrap()
+            .install()
+    else {
+        panic!("controlled replacement must succeed");
+    };
+    assert_ne!(next, version);
+    assert_eq!(next, DiskVersion::observe(&path).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), b"next\r\n");
+    assert_eq!(fs::read_dir(&f.0).unwrap().count(), 1);
+}
+
+#[test]
+fn common_writer_never_adopts_a_preparation_modified_before_installation() {
+    use vocalnotes_lib::storage::markdown_file::WriteResult;
+    let f = Fixture::new();
+    for existing in [false, true] {
+        for during_install in [false, true] {
+            let path = f.path(if existing { "existing.md" } else { "new.md" });
+            let expected = if existing {
+                fs::write(&path, "original").unwrap();
+                Some(vocalnotes_lib::storage::markdown_file::DiskVersion::observe(&path).unwrap())
+            } else {
+                None
+            };
+            let preparation = write_candidate(path.clone(), "local", expected)
+                .prepare()
+                .ok()
+                .unwrap();
+            let stage = preparation.path().to_owned();
+            if !during_install {
+                fs::write(&stage, "changed preparation").unwrap();
+            }
+            let result = preparation.install_observed(|point| {
+                if during_install && point == SaveStage::Prepared {
+                    fs::write(&stage, "changed preparation")?;
+                }
+                Ok(())
+            });
+            assert!(matches!(result, WriteResult::Failed { .. }));
+            assert_eq!(fs::read_to_string(stage).unwrap(), "changed preparation");
+            if existing {
+                assert_eq!(fs::read_to_string(path).unwrap(), "original");
+            } else {
+                assert!(!path.exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn common_writer_rechecks_version_bound_consent_and_concurrent_creation() {
+    use vocalnotes_lib::storage::markdown_file::{DiskVersion, OverwriteConsent, WriteResult};
+    let f = Fixture::new();
+    let path = f.path("consent.md");
+    fs::write(&path, "original").unwrap();
+    let expected = DiskVersion::observe(&path).unwrap();
+    let preparation = write_candidate(path.clone(), "local", None)
+        .with_overwrite_consent(OverwriteConsent::new(path.clone(), expected.clone()).unwrap())
+        .ok()
+        .unwrap()
+        .prepare()
+        .ok()
+        .unwrap();
+    fs::write(&path, "external").unwrap();
+    let observed = DiskVersion::observe(&path).unwrap();
+    let WriteResult::Conflict {
+        expected: old,
+        observed: current,
+        recovery_paths,
+    } = preparation.install()
+    else {
+        panic!("stale consent must not overwrite");
+    };
+    assert_eq!(old, Some(expected));
+    assert_eq!(current, Some(observed));
+    assert_eq!(fs::read_to_string(&path).unwrap(), "external");
+    for source in ["local", "external"] {
+        assert!(
+            recovery_paths
+                .iter()
+                .any(|path| fs::read_to_string(path).ok().as_deref() == Some(source))
+        );
+    }
+    let path = f.path("new.md");
+    let preparation = write_candidate(path.clone(), "local", None)
+        .prepare()
+        .ok()
+        .unwrap();
+    let result = preparation.install_observed(|stage| {
+        if stage == SaveStage::BeforeExchange {
+            fs::write(&path, "concurrent")?;
+        }
+        Ok(())
+    });
+    assert!(matches!(
+        result,
+        WriteResult::Conflict {
+            expected: None,
+            observed: Some(_),
+            ..
+        }
+    ));
+    assert_eq!(fs::read_to_string(path).unwrap(), "concurrent");
+}
+
+#[test]
+fn interrupted_post_replacement_keeps_original_local_and_later_external_versions() {
+    use vocalnotes_lib::storage::markdown_file::{DiskVersion, WriteResult};
+    let f = Fixture::new();
+    let path = f.path("interrupted.md");
+    fs::write(&path, "original").unwrap();
+    let expected = DiskVersion::observe(&path).unwrap();
+    let preparation = write_candidate(path.clone(), "local", Some(expected))
+        .prepare()
+        .ok()
+        .unwrap();
+    let result = preparation.install_observed(|stage| {
+        if stage == SaveStage::Exchanged {
+            fs::write(&path, "later external")?;
+            return Err(io::Error::other("synthetic post-install interruption"));
+        }
+        Ok(())
+    });
+    let WriteResult::Failed { error, .. } = result else {
+        panic!("interruption must fail");
+    };
+    assert_eq!(fs::read_to_string(path).unwrap(), "later external");
+    for source in ["original", "local"] {
+        assert!(
+            error
+                .recovery_paths
+                .iter()
+                .any(|path| fs::read_to_string(path).ok().as_deref() == Some(source))
+        );
+    }
+}
+
+#[test]
+fn write_preparation_captures_exact_state_exclusively_without_touching_destination() {
+    use vocalnotes_lib::{
+        app::document::{DocumentFormat, DocumentVersion},
+        domain::intention::DraftingIntention,
+        storage::{
+            markdown_file::{WriteCandidate, WriteContent},
+            note_document,
+        },
+    };
+    let f = Fixture::new();
+    let path = f.path("note.von");
+    fs::write(&path, "external").unwrap();
+    let source = "e\u{301}\r\n\r\n<!-- vocalnotes:intention:body -->\r\n";
+    let intention =
+        DraftingIntention::new("".into(), "".into(), "".into(), "contexte".into()).unwrap();
+    let candidate = WriteCandidate::new(
+        WriteContent::Document {
+            source: source.into(),
+            intention: intention.clone(),
+        },
+        path.clone(),
+        DocumentFormat::Von,
+        DocumentVersion {
+            note_id: 7,
+            revision: 9,
+            input_generation: 11,
+        },
+        None,
+    )
+    .ok()
+    .unwrap();
+    let first = candidate.clone().prepare().ok().unwrap();
+    let second = candidate.prepare().ok().unwrap();
+    assert_ne!(first.path(), second.path());
+    assert_eq!(first.path().parent(), path.parent());
+    assert_eq!(first.path().extension().unwrap(), "von");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "external");
+    assert_eq!(
+        fs::read(first.path()).unwrap(),
+        fs::read(second.path()).unwrap()
+    );
+    let decoded = note_document::decode(&fs::read_to_string(first.path()).unwrap()).unwrap();
+    assert_eq!(decoded.0, source);
+    assert!(decoded.1 == intention);
+    let retained = first.path().to_owned();
+    drop(first);
+    assert!(
+        retained.exists(),
+        "an unfinished preparation must remain recoverable"
+    );
+}
+
+#[test]
+fn write_candidates_reject_invalid_or_oversized_serialization_before_creating_files() {
+    use vocalnotes_lib::{
+        app::document::{DocumentErrorCode, DocumentFormat, DocumentVersion},
+        domain::intention::DraftingIntention,
+        storage::{
+            markdown_file::{WriteCandidate, WriteContent},
+            note_document::MAX_DOCUMENT_BYTES,
+        },
+    };
+    let f = Fixture::new();
+    let version = DocumentVersion {
+        note_id: 1,
+        revision: 1,
+        input_generation: 1,
+    };
+    let failure = WriteCandidate::new(
+        WriteContent::Document {
+            source: "x".repeat(MAX_DOCUMENT_BYTES),
+            intention: DraftingIntention::new("".into(), "".into(), "".into(), "context".into())
+                .unwrap(),
+        },
+        f.path("large.von"),
+        DocumentFormat::Von,
+        version,
+        None,
+    )
+    .err()
+    .unwrap();
+    assert_eq!(failure.code, DocumentErrorCode::SizeLimit);
+    assert!(
+        WriteCandidate::new(
+            WriteContent::MarkdownExport("body".into()),
+            f.path("export.von"),
+            DocumentFormat::Von,
+            version,
+            None,
+        )
+        .is_err()
+    );
+    assert!(
+        WriteCandidate::new(
+            WriteContent::MarkdownExport("body".into()),
+            f.path("export.txt"),
+            DocumentFormat::Markdown,
+            version,
+            None,
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read_dir(&f.0).unwrap().count(), 0);
+}
+
+#[test]
+fn markdown_export_preparation_does_not_add_even_an_ambiguity_envelope() {
+    use vocalnotes_lib::{
+        app::document::{DocumentFormat, DocumentVersion},
+        storage::markdown_file::{WriteCandidate, WriteContent},
+    };
+    let f = Fixture::new();
+    let source = "<!-- vocalnotes:intention:ordinary user text -->\r\nété\r\n";
+    let candidate = WriteCandidate::new(
+        WriteContent::MarkdownExport(source.into()),
+        f.path("export"),
+        DocumentFormat::Markdown,
+        DocumentVersion {
+            note_id: 1,
+            revision: 2,
+            input_generation: 3,
+        },
+        None,
+    )
+    .ok()
+    .unwrap();
+    assert_eq!(candidate.path(), f.path("export.md"));
+    let preparation = candidate.prepare().ok().unwrap();
+    assert_eq!(fs::read(preparation.path()).unwrap(), source.as_bytes());
+    assert!(!f.path("export.md").exists());
+}
+
+#[test]
+fn note_paths_accept_both_formats_preserve_case_and_only_complete_missing_extensions() {
+    use vocalnotes_lib::{
+        app::document::DocumentFormat,
+        storage::markdown_file::{complete_note_path, validate_note_path},
+    };
+    let f = Fixture::new();
+    for (name, format) in [
+        ("note.VON", DocumentFormat::Von),
+        ("note.MD", DocumentFormat::Markdown),
+    ] {
+        let path = f.path(name);
+        assert_eq!(validate_note_path(&path).unwrap(), format);
+        assert_eq!(complete_note_path(&path, format).unwrap(), path);
+        let file = MarkdownFile::create_copy(&path, "source\r\n").unwrap();
+        assert_eq!(file.path(), path);
+        assert_eq!(MarkdownFile::open(&path).unwrap().1, "source\r\n");
+    }
+    assert_eq!(
+        complete_note_path(&f.path("note"), DocumentFormat::Von).unwrap(),
+        f.path("note.von")
+    );
+    assert_eq!(
+        complete_note_path(&f.path("note"), DocumentFormat::Markdown).unwrap(),
+        f.path("note.md")
+    );
+    assert!(complete_note_path(&f.path("note.MD"), DocumentFormat::Von).is_err());
+    for path in [
+        PathBuf::from("relative.von"),
+        f.path("..").join("note.von"),
+        f.path("bad.txt"),
+        f.path("bad."),
+        f.path("bad\0.von"),
+        f.path(&format!("{}.von", "x".repeat(4096))),
+        PathBuf::from(r"\\server\share\note.von"),
+        PathBuf::from("//server/share/note.md"),
+    ] {
+        assert!(validate_note_path(&path).is_err(), "{}", path.display());
+    }
+    #[cfg(windows)]
+    for path in [
+        r"C:\note:stream.von",
+        r"\\?\UNC\server\share\note.von",
+        r"\\.\C:\note.von",
+    ] {
+        assert!(validate_note_path(std::path::Path::new(path)).is_err());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let upper = MarkdownFile::create_copy(&f.path("Case.von"), "upper").unwrap();
+        let lower = MarkdownFile::create_copy(&f.path("case.von"), "lower").unwrap();
+        assert_ne!(upper.path(), lower.path());
+        assert_eq!(MarkdownFile::open(upper.path()).unwrap().1, "upper");
+        assert_eq!(MarkdownFile::open(lower.path()).unwrap().1, "lower");
+    }
+}
+
+#[test]
 fn controlled_save_preserves_opaque_crlf_and_unmodified_bytes() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -43,6 +419,52 @@ fn controlled_save_preserves_opaque_crlf_and_unmodified_bytes() {
     assert_eq!(fs::read(&path).unwrap(), new.as_bytes());
     assert_eq!(fs::read_dir(&f.0).unwrap().count(), 1);
     assert!(matches!(file.save(&new).unwrap(), SaveOutcome::Saved));
+}
+
+#[test]
+fn exclusive_install_never_replaces_a_concurrent_creation() {
+    let f = Fixture::new();
+    let path = f.path("new.von");
+    let failure = MarkdownFile::create_copy_observed(&path, "local\r\n", |stage| {
+        if stage == SaveStage::BeforeExchange {
+            fs::write(&path, "concurrent")?;
+        }
+        Ok(())
+    })
+    .err()
+    .unwrap();
+    assert_eq!(
+        failure.code,
+        vocalnotes_lib::app::document::DocumentErrorCode::ExternalConflict
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), "concurrent");
+    assert!(
+        failure
+            .recovery_paths
+            .iter()
+            .any(|p| fs::read_to_string(p).ok().as_deref() == Some("local\r\n"))
+    );
+}
+
+#[test]
+fn changed_installation_is_not_adopted_and_the_local_preparation_is_recoverable() {
+    let f = Fixture::new();
+    let path = f.path("new.von");
+    let failure = MarkdownFile::create_copy_observed(&path, "local", |stage| {
+        if stage == SaveStage::Exchanged {
+            fs::write(&path, "external after install")?;
+        }
+        Ok(())
+    })
+    .err()
+    .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "external after install");
+    assert!(
+        failure
+            .recovery_paths
+            .iter()
+            .any(|p| fs::read_to_string(p).ok().as_deref() == Some("local"))
+    );
 }
 
 #[test]
@@ -61,7 +483,6 @@ fn external_change_before_save_preserves_both_versions() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
 fn race_at_exchange_keeps_displaced_external_note_without_rollback() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -108,7 +529,6 @@ fn interruption_before_exchange_retains_original_and_prepared_note() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
 fn concurrent_change_after_exchange_is_preserved_and_reported() {
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -173,8 +593,7 @@ fn replacement_preserves_mode_and_detects_same_content_new_identity() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
-fn accepted_manual_commit_autosaves_but_conflict_retains_dirty_note() {
+fn accepted_edits_never_write_and_explicit_save_detects_external_conflicts() {
     use vocalnotes_lib::platform::probe::{Patch, Probe, Proposal};
     let f = Fixture::new();
     let path = f.path("note.md");
@@ -199,32 +618,77 @@ fn accepted_manual_commit_autosaves_but_conflict_retains_dirty_note() {
             }],
         });
         assert!(ack.accepted);
-        if index == 0 {
-            assert!(!ack.snapshot.dirty);
-            assert_eq!(fs::read_to_string(&path).unwrap(), text);
-        } else {
-            assert!(ack.snapshot.dirty);
-            assert!(!ack.snapshot.storage_message.is_empty());
-            assert_eq!(ack.snapshot.source, "local");
+        assert!(ack.snapshot.dirty);
+        assert_eq!(ack.snapshot.source, text);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            if index == 0 { "avant" } else { "external" }
+        );
+        if index == 1 {
+            assert!(ack.snapshot.storage_message.is_empty());
+            assert!(note.save_current().is_err());
+            assert!(!note.snapshot().storage_message.is_empty());
             assert_eq!(fs::read_to_string(&path).unwrap(), "external");
             assert!(!note.request_close());
         }
     }
 }
 
-#[cfg(unix)]
 #[test]
-fn hardlinked_destination_uses_explicit_copy_instead_of_replacing_alias() {
+fn dirty_compares_exact_persistent_values_and_excludes_temporary_instructions() {
+    use vocalnotes_lib::domain::{
+        DictationTarget,
+        note::{Note, Patch, Proposal},
+    };
+    let mut note = Note::new(String::new());
+    assert!(!note.snapshot().dirty);
+    note.set_dictation_mode(DictationTarget::Instructions);
+    note.set_instructions("temporary".into()).unwrap();
+    assert!(!note.snapshot().dirty);
+    note.set_context("context".into()).unwrap();
+    assert!(note.snapshot().dirty);
+    note.set_context(String::new()).unwrap();
+    assert!(!note.snapshot().dirty);
+    for (index, expected, text) in [(0, "", "new text"), (1, "new text", "")] {
+        let before = note.snapshot();
+        let ack = note.manual(Proposal {
+            transaction_id: format!("baseline-{index}"),
+            note_id: before.note_id,
+            manual_period: before.manual_period,
+            base_revision: before.revision,
+            patches: vec![Patch {
+                from: 0,
+                to: expected.len(),
+                expected: expected.into(),
+                text: text.into(),
+            }],
+        });
+        assert!(ack.accepted);
+        assert_eq!(ack.snapshot.dirty, index == 0);
+        assert!(ack.snapshot.revision > before.revision);
+        assert_eq!(ack.snapshot.instructions, "temporary");
+    }
+}
+
+#[test]
+fn hardlinked_destination_fails_with_recovery_instead_of_adopting_a_copy() {
     let f = Fixture::new();
     let path = f.path("note.md");
     let alias = f.path("alias.md");
     fs::write(&path, "original").unwrap();
     fs::hard_link(&path, &alias).unwrap();
     let (mut file, _) = MarkdownFile::open(&path).unwrap();
-    let SaveOutcome::Copy { path: copy } = file.save("local").unwrap() else {
-        panic!("explicit fallback expected")
-    };
-    assert_eq!(fs::read_to_string(copy).unwrap(), "local");
+    let failure = file.save("local").unwrap_err();
+    assert_eq!(
+        failure.code,
+        vocalnotes_lib::app::document::DocumentErrorCode::UnsupportedStorage
+    );
+    assert!(
+        failure
+            .recovery_paths
+            .iter()
+            .any(|p| fs::read_to_string(p).ok().as_deref() == Some("local"))
+    );
     assert_eq!(fs::read_to_string(alias).unwrap(), "original");
     assert_eq!(fs::read_to_string(path).unwrap(), "original");
 }
@@ -294,7 +758,6 @@ fn interrupted_process_child() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
 fn process_exit_before_and_after_exchange_leaves_both_notes_recoverable() {
     for after in [false, true] {
         let f = Fixture::new();
@@ -393,12 +856,15 @@ fn context_edits_preserve_legacy_metadata_and_never_serialize_instructions() {
     note.set_context("contexte mis à jour".into()).unwrap();
     note.set_dictation_mode(DictationTarget::Instructions);
     note.set_instructions("consigne temporaire".into()).unwrap();
-    assert!(
-        !note.snapshot().dirty,
-        "{}",
-        note.snapshot().storage_message
+    assert!(note.snapshot().dirty);
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        encode("# Titre\n\nTexte.", &legacy)
     );
-    let persisted = fs::read_to_string(note.saved_destination().unwrap()).unwrap();
+    let saved = f.path("context.von");
+    note.save_copy(&saved).unwrap();
+    assert!(!note.snapshot().dirty);
+    let persisted = fs::read_to_string(&saved).unwrap();
     let (body, loaded) = decode(&persisted).unwrap();
 
     assert_eq!(body, "# Titre\n\nTexte.");
@@ -451,6 +917,8 @@ fn metadata_only_external_conflict_preserves_both_complete_documents() {
     let ticket = note.voice_ticket(1).unwrap();
     note.commit_voice(&ticket, decode_intervention(r#"{"status":"resolved","message":"","actions":[{"type":"drafting_intent","text":"Local","form":"e-mail","tone":"","context":""}]}"#).unwrap()).unwrap();
     assert!(note.snapshot().dirty);
+    assert!(note.snapshot().storage_message.is_empty());
+    assert!(note.save_current().is_err());
     assert!(note.snapshot().storage_message.contains("Conflit disque"));
     assert_eq!(fs::read_to_string(&path).unwrap(), external);
     let recovered: Vec<_> = fs::read_dir(&f.0)

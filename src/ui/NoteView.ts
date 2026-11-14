@@ -18,7 +18,16 @@ export const schema = new Schema({
   }),
 });
 
+export function withInsertionBlock(s: Snapshot): Snapshot {
+  const end = new TextEncoder().encode(s.source).length;
+  if (/(?:\r?\n){2}$/.test(s.source) && s.blocks.at(-1)?.to !== end) {
+    return { ...s, blocks: [...s.blocks, { from: end, to: end, raw: "", kind: "paragraph" }] };
+  }
+  return s;
+}
+
 export function documentFor(s: Snapshot) {
+  s = withInsertionBlock(s);
   return schema.nodes.doc!.create(null, s.blocks.map(block => {
     if (block.kind === "opaque") return schema.nodes.opaque!.create({ raw: block.raw });
     const parsed = defaultMarkdownParser.parse(block.raw).firstChild;

@@ -1,6 +1,26 @@
 //! Closing is stop/invalidate -> save -> release core lock -> destroy window.
 //! A failed save never destroys the window or restarts capture.
+use crate::app::document::{DocumentError, DocumentKind, DocumentOperation, OperationId};
+use crate::platform::desktop::{DesktopContext, DocumentEvents};
 use crate::platform::{controller::Controller, probe::Snapshot};
+
+/// System cross, Alt+F4 and menu Quit all register this same intention.
+pub fn request(
+    controller: &Controller,
+    events: &impl DocumentEvents,
+    context: DesktopContext<'_>,
+) -> Result<DocumentOperation, DocumentError> {
+    crate::platform::desktop::request_document(controller, events, context, DocumentKind::Quit)
+}
+
+/// A renderer cannot call this; destruction requires a completed native Quit.
+pub fn finish_document(
+    controller: &Controller,
+    id: OperationId,
+    destroy: impl FnOnce() -> Result<(), ()>,
+) -> Result<Snapshot, DocumentError> {
+    controller.finish_quit(id, destroy)
+}
 
 pub fn begin(controller: &Controller) -> Result<(), &'static str> {
     controller.stop(

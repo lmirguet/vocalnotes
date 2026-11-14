@@ -428,9 +428,16 @@ fn note_intention_survives_stop_restart_and_file_reopen_without_entering_body() 
     note.commit_voice(&ticket, decode_intervention(&response.to_string()).unwrap())
         .unwrap();
     assert!(
-        !note.snapshot().dirty,
-        "metadata-only changes autosave when a destination exists"
+        note.snapshot().dirty,
+        "metadata changes require explicit saving"
     );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Texte de la note.\r\n"
+    );
+    let complete_path = path.with_extension("von");
+    note.save_copy(&complete_path).unwrap();
+    assert!(!note.snapshot().dirty);
     let saved_path = note.saved_destination().unwrap();
     note.stop("Manuel");
     assert_eq!(note.drafting_intention().tone(), "cordial");
@@ -447,6 +454,7 @@ fn note_intention_survives_stop_restart_and_file_reopen_without_entering_body() 
     reopened.start_voice(false).unwrap();
     assert_eq!(reopened.drafting_intention().tone(), "cordial");
     std::fs::remove_file(saved_path).unwrap();
+    std::fs::remove_file(path).unwrap();
 }
 
 struct FixedReformatter {

@@ -2,8 +2,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { TextSelection } from "prosemirror-state";
 import { mountPrototype, type Snapshot } from "./Prototype";
+import type { DocumentDispatch } from "./DocumentCommands";
 
 const empty: Snapshot = { noteId: 1, manualPeriod: 1, revision: 0, generation: 1,
+  documentName:"Sans titre", documentPath:null, documentFormat:null, documentOperation:null, documentError:null,
+  history:{content:{canUndo:false,canRedo:false},context:{canUndo:false,canRedo:false},instructions:{canUndo:false,canRedo:false}},
   mode: "manual", dictationMode: "content", context: "", instructions: "",
   dictationTransitionPending: false, inputGeneration: 1,
   source: "", dirty: false, message: "Manuel.",
@@ -21,6 +24,9 @@ async function editor(input: string | Snapshot = "", deferred = false) {
     { from: 0, to: new TextEncoder().encode(source).length, raw: source, kind: "paragraph" },
   ] : empty.blocks };
   const pending: Array<() => void> = [];
+  const past: Snapshot[] = [];
+  const future: Snapshot[] = [];
+  let dispatch!: (event: DocumentDispatch) => void;
   let reject = false;
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
     if (cmd === "prototype_snapshot") return s;
@@ -30,6 +36,7 @@ async function editor(input: string | Snapshot = "", deferred = false) {
         const ack = () => {
           expect(p.baseRevision).toBe(s.revision);
           if (!reject) {
+            past.push(s); future.length = 0;
             let next = s.source;
             for (const patch of [...p.patches].sort((a, b) => b.from - a.from)) {
               const b = new TextEncoder().encode(next);
@@ -50,6 +57,25 @@ async function editor(input: string | Snapshot = "", deferred = false) {
         if (deferred) pending.push(ack); else ack();
       });
     }
+    if (cmd === "document_action") {
+      const a = args!.action as { type: string; direction: "undo" | "redo"; area: string; noteId: number; baseRevision: number; inputGeneration: number; transactionId: string };
+      if (a.type === "focus") return { snapshot: s };
+      expect(a.type).toBe("history");
+      expect(a.area).toBe("content");
+      return new Promise(resolve => {
+        const apply = () => {
+          expect(a.noteId).toBe(s.noteId);
+          expect(a.baseRevision).toBe(s.revision);
+          expect(a.inputGeneration).toBe(s.inputGeneration);
+          const target = (a.direction === "undo" ? past : future).pop()!;
+          expect(target).toBeDefined();
+          (a.direction === "undo" ? future : past).push(s);
+          s = { ...s, source: target.source, blocks: target.blocks, revision: s.revision+1, inputGeneration:s.inputGeneration+1 };
+          resolve({snapshot:s});
+        };
+        if (deferred) pending.push(apply); else apply();
+      });
+    }
     if (cmd === "prototype_action") {
       const a = args!.action as { type: string; path?: string };
       if (a.type === "new") {
@@ -68,7 +94,7 @@ async function editor(input: string | Snapshot = "", deferred = false) {
   });
   const root = document.createElement("main");
   document.body.replaceChildren(root);
-  const app = await mountPrototype(root, invoke);
+  const app = await mountPrototype(root, invoke, { listen: async callback => { dispatch = callback; return () => {}; } });
   // jsdom has no Range geometry. Bypass only scrolling, not key handling,
   // transactions, selection, focus, projection or the IPC contract assertions.
   app.view.setProps({ handleScrollToSelection: () => true });
@@ -77,7 +103,9 @@ async function editor(input: string | Snapshot = "", deferred = false) {
     { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
   const type = (text: string) => app.view.dispatch(app.view.state.tr.insertText(text));
   const settle = async () => { await vi.waitFor(() => expect(root.textContent).not.toContain("projection en attente")); };
-  return { app, root, invoke, pending, enter, type, settle, reject: () => { reject = true; }, snapshot: () => s };
+  let dispatchId = 0;
+  const history = (direction: "undo" | "redo") => dispatch({type:"history",dispatchId:`history-${++dispatchId}`,direction,area:"content"});
+  return { app, root, invoke, pending, enter, type, settle, history, reject: () => { reject = true; }, snapshot: () => s };
 }
 
 it("après migration l'édition manuelle et son annulation restent disponibles", async () => {
@@ -88,7 +116,7 @@ it("après migration l'édition manuelle et son annulation restent disponibles",
   e.type(" modifiée");
   await e.settle();
   expect(e.snapshot().source).toBe("Note modifiée");
-  e.root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.click();
+  e.history("undo");
   await vi.waitFor(() => expect(e.snapshot().source).toBe("Note"));
 });
 
@@ -122,11 +150,14 @@ it("saisie rapide → Entrée → saisie avant ack, préconditions, undo/redo ac
   await e.settle();
   expect(e.snapshot().source).toBe("un\n\ndeux");
   expect(e.app.view.hasFocus()).toBe(true);
-  const history = async (action: string, index: number) => {
-    e.root.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!.click();
+  const history = async (action: "undo" | "redo", index: number) => {
+    e.history(action);
     await vi.waitFor(() => expect(e.pending.length).toBe(index + 1));
     e.pending[index]!();
-    await vi.waitFor(() => expect(e.root.querySelector<HTMLButtonElement>('[data-action="undo"]')!.disabled).toBe(false));
+    await vi.waitFor(() => {
+      expect(e.app.view.state.doc.textContent).toBe(e.snapshot().blocks.map(block => block.raw).join(""));
+      expect(e.app.view.state.doc.childCount).toBe(e.snapshot().blocks.length + (e.snapshot().source.endsWith("\n\n") ? 1 : 0));
+    });
   };
   await history("undo", 3);
   expect(e.snapshot().source).toBe("un\n\n");
@@ -184,34 +215,16 @@ it("les paragraphes vides et le bloc opaque hors cible survivent aux ack et au p
   expect(e.app.view.hasFocus()).toBe(true);
 });
 
-it("Fichier : vrais clics disclosure, nouvelle note explicite, refus save sans chemin persistant et succès", async () => {
-  vi.useFakeTimers();
+it("Fichier : aucune commande documentaire DOM ou destination libre ne contourne le protocole natif", async () => {
   const e = await editor();
-  const files = e.root.querySelector<HTMLButtonElement>("nav button[aria-expanded]")!;
-  const action = async (id: string) => {
-    files.click();
-    const b = e.root.querySelector<HTMLButtonElement>(`[data-action="${id}"]`)!;
-    b.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    b.click();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(files.getAttribute("aria-expanded")).toBe("false");
-  };
-  await action("new");
-  expect(e.snapshot().noteId).toBe(2);
-  expect(e.root.textContent).toContain("Nouvelle note créée");
-  await action("save");
-  expect(e.root.textContent).toContain("Chemin absolu vers un fichier .md requis");
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(e.root.textContent).toContain("Chemin absolu vers un fichier .md requis");
-  await action("save-current");
-  expect(e.root.textContent).toContain("Choisir une destination");
-  const path = e.root.querySelector<HTMLInputElement>('input[aria-label="Destination Markdown locale"]')!;
-  path.value = "C:\\synthetic\\note.md";
-  await action("save");
-  expect(e.root.textContent).toContain("Nouvelle copie Markdown enregistrée");
+  expect(e.root.querySelector("nav, input[type=password], [data-action=new], [data-action=save], [data-action=save-current]")).toBeNull();
+  expect(e.root.querySelector('[aria-label="Destination Markdown locale"]')).toBeNull();
+  const event = new KeyboardEvent("keydown", {key:"z",code:"KeyZ",ctrlKey:true,bubbles:true,cancelable:true});
+  e.app.view.dom.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(e.invoke.mock.calls.filter(([name]) => name === "document_action")).toHaveLength(0);
   e.type("ne pas perdre");
-  await vi.advanceTimersByTimeAsync(0);
-  await action("new");
+  await e.settle();
   expect(e.snapshot().source).toBe("ne pas perdre");
-  expect(e.root.textContent).toContain("Sauvegarder la note modifiée");
+  expect(e.invoke.mock.calls.filter(([name]) => name === "prototype_action")).toHaveLength(0);
 });

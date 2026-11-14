@@ -2,8 +2,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { mountDesktopShell, type Snapshot } from "./DesktopShell";
 import type { Proposal } from "./contracts";
+import { mountPreferences } from "./Preferences";
+import type { DocumentDispatch } from "./DocumentCommands";
 
 const initial: Snapshot = { noteId:1, manualPeriod:1, revision:0, generation:1, mode:"manual",
+  documentName:"Sans titre", documentPath:null, documentFormat:null, documentOperation:null, documentError:null,
+  history:{content:{canUndo:false,canRedo:false},context:{canUndo:false,canRedo:false},instructions:{canUndo:false,canRedo:false}},
   dictationMode:"content", context:"", instructions:"", dictationTransitionPending:false, inputGeneration:1,
   source:"Note", dirty:false, message:"Prêt", blocks:[{from:0,to:4,raw:"Note",kind:"paragraph"}] };
 
@@ -28,7 +32,8 @@ describe("fenêtre de note", () => {
     const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) => initial);
     const app = await mountDesktopShell(root, invoke);
     try {
-      expect([...root.querySelectorAll(".menu-trigger")].map(e => e.textContent)).toEqual(["Fichier","Édition","Aide"]);
+      expect(root.querySelector("nav, .menu-bar, .menu-trigger")).toBeNull();
+      expect(root.querySelector('[aria-label="Destination Markdown locale"]')).toBeNull();
       expect(root.querySelectorAll('[role="toolbar"]')).toHaveLength(2);
       for (const action of ["Gras","Italique","Titre","reformat"]) expect(root.querySelector(`[data-action="${action}"]`)).not.toBeNull();
       expect(root.querySelectorAll(".ProseMirror")).toHaveLength(1);
@@ -39,7 +44,7 @@ describe("fenêtre de note", () => {
       expect([...root.querySelectorAll<HTMLButtonElement>("[data-dictation-mode]")].every(button =>
         button.getAttribute("aria-pressed") === "false")).toBe(true);
       expect(invoke.mock.calls.map(call => call[0])).toEqual([
-        "prototype_snapshot", "preferences_get",
+        "prototype_snapshot", "preferences_get", "prototype_snapshot",
       ]);
     } finally { app.destroy(); }
   });
@@ -47,17 +52,19 @@ describe("fenêtre de note", () => {
     const root = document.createElement("main"); document.body.replaceChildren(root);
     const conflict = "Conflit disque : versions préservées.\nVersion locale : /tmp/local.md\nVersion disque : /tmp/externe.md";
     let snapshot = initial;
-    const app = await mountDesktopShell(root, async command => {
-      if (command === "prototype_action") {
-        snapshot = {...initial, dirty:true, storageMessage:conflict};
-        throw "Conflit disque : enregistrer une nouvelle copie avant de continuer la sauvegarde.";
+    let dispatch!: (event: DocumentDispatch) => void;
+    const app = await mountDesktopShell(root, async (command, args) => {
+      if (command === "document_action" && (args!.action as { type: string }).type === "ready") {
+        snapshot = {...initial, dirty:true, storageMessage:conflict, documentError: {code:"external_conflict",message:"Conflit disque ; versions préservées."}};
+        return { snapshot };
       }
       return snapshot;
-    });
+    }, { listen: async callback => { dispatch = callback; return () => {}; } });
     try {
-      root.querySelector<HTMLButtonElement>('[data-action="save-current"]')!.click();
+      snapshot = { ...initial, documentOperation: {operationId:"1",noteId:1,action:"save",phase:"awaiting_ui",cancellable:true} };
+      dispatch({type:"prepare",dispatchId:"save",operationId:"1"});
       await vi.waitFor(() => {
-        const status = root.querySelector('[role="status"]')!;
+        const status = root.querySelector('[data-storage-warning]')!.parentElement!;
         expect(status.firstElementChild?.getAttribute("data-storage-warning")).toBe("true");
         expect(status.firstElementChild?.textContent).toBe(conflict);
         expect(status.textContent).not.toContain("Échec de l'action");
@@ -70,14 +77,12 @@ describe("fenêtre de note", () => {
       stt:{provider:"openai",model:"gpt-realtime-whisper"},
       llm:{provider:"openai",model:"gpt-6-luna"}, lastNote:null,
     } : initial);
-    const app = await mountDesktopShell(root, invoke);
+    const app = await mountPreferences(root, invoke);
     try {
-      const open = root.querySelector<HTMLButtonElement>('[data-action="preferences"]')!;
-      open.click();
       await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("preferences_get"));
       const secret = root.querySelector<HTMLInputElement>('input[type="password"]')!;
       secret.value = "synthetic-unsent-key";
-      open.click();
+      root.querySelector<HTMLButtonElement>('[data-action="models-cancel"]')!.click();
       expect(secret.value).toBe("");
       expect(invoke.mock.calls.every(call => call[0] !== "prototype_set_key")).toBe(true);
       expect(root.textContent).not.toContain("synthetic-unsent-key");
@@ -283,19 +288,18 @@ describe("fenêtre de note", () => {
       expect(field.value).toBe("");
     } finally { app.destroy(); }
   });
-  it("met à jour l’état sans déplacer le focus de la destination", async () => {
+  it("met à jour l’état sans déplacer le focus de l’éditeur", async () => {
     vi.useFakeTimers();
     const root = document.createElement("main"); document.body.replaceChildren(root);
-    let calls = 0;
-    const app = await mountDesktopShell(root, async () => ++calls === 1 ? initial : {...initial,message:"Passage en cours"});
+    let snapshot = initial;
+    const app = await mountDesktopShell(root, async command => command === "document_action" ? {snapshot} : snapshot);
     try {
-      root.querySelector<HTMLButtonElement>(".menu-trigger")!.click();
-      const path = root.querySelector<HTMLInputElement>('[aria-label="Destination Markdown locale"]')!;
-      path.focus();
+      app.view.focus();
+      await Promise.resolve();
+      snapshot = { ...initial, message: "Passage en cours" };
       await vi.advanceTimersByTimeAsync(1000);
-      expect(root.querySelector('[role="status"]')?.textContent).toContain("Passage en cours");
-      expect(document.activeElement).toBe(path);
-      expect(root.querySelector('[aria-expanded="true"]')).not.toBeNull();
+      expect(root.textContent).toContain("Passage en cours");
+      expect(app.view.hasFocus()).toBe(true);
     } finally { app.destroy(); vi.useRealTimers(); }
   });
   it("place le contexte au-dessus de la note sans exposer les métadonnées legacy", async () => {
@@ -307,7 +311,7 @@ describe("fenêtre de note", () => {
       const field = root.querySelector<HTMLTextAreaElement>('[data-dictation-field="context"]')!;
       const editor = root.querySelector('[aria-label="Note"]')!;
       expect(field.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      const focused = root.querySelector<HTMLButtonElement>(".menu-trigger")!; focused.focus();
+      const focused = root.querySelector<HTMLButtonElement>('[data-action="reformat"]')!; focused.focus();
       snapshot = { ...snapshot, context: "Contexte actualisé",
         draftingIntention: { purpose: "Présenter un devis", form: "e-mail", tone: "cordial", context: "" } };
       await vi.advanceTimersByTimeAsync(1000);
@@ -491,4 +495,90 @@ describe("fenêtre de note", () => {
     } finally { app.destroy(); }
   });
 
+});
+
+it.each([true, false])("préparation native : attend la proposition acquittée=%s, conserve une saisie refusée", async accepted => {
+  const root = document.createElement("main"); document.body.replaceChildren(root);
+  let state = initial;
+  let dispatch!: (event: DocumentDispatch) => void;
+  let release!: () => void;
+  const trace: string[] = [];
+  const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+    if (command === "prototype_manual") {
+      const proposal = args!.proposal as Proposal;
+      return new Promise(resolve => {
+        release = () => {
+          if (accepted) state = {...state, source:"XNote",revision:1,inputGeneration:2,
+            blocks:[{from:0,to:5,raw:"XNote",kind:"paragraph"}]};
+          trace.push("manual-ack");
+          resolve({accepted,transactionId:proposal.transactionId,snapshot:state,message:"Acquitté"});
+        };
+      });
+    }
+    if (command === "document_action") {
+      const action = args!.action as {type:string};
+      trace.push(action.type);
+      state = {...state, documentOperation:null};
+      return {snapshot:state};
+    }
+    return state;
+  });
+  const app = await mountDesktopShell(root, invoke, { listen: async callback => { dispatch = callback; return () => {}; } });
+  try {
+    app.view.dispatch(app.view.state.tr.insertText("X", 1));
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    state = {...state,documentOperation:{operationId:"1",noteId:1,action:"new",phase:"awaiting_ui",cancellable:true}};
+    dispatch({type:"prepare",dispatchId:"prepare",operationId:"1"});
+    await vi.waitFor(() => expect(app.view.dom.getAttribute("contenteditable")).toBe("false"));
+    expect(trace).not.toContain("ready");
+    release();
+    if (accepted) {
+      await vi.waitFor(() => expect(trace).toContain("ready"));
+      expect(trace.indexOf("manual-ack")).toBeLessThan(trace.indexOf("ready"));
+    } else {
+      await vi.waitFor(() => expect(root.textContent).toContain("Préparation refusée"));
+      expect(trace).not.toContain("ready");
+      expect(root.querySelector('[aria-label="Saisie non acceptée récupérable en mémoire"]')!.textContent).toBe("XNote");
+      root.querySelector<HTMLButtonElement>('[data-action="document-cancel"]')!.click();
+      await vi.waitFor(() => expect(trace).toContain("cancel"));
+      expect(app.view.state.doc.textContent).toBe("Note");
+      expect(root.querySelector('[aria-label="Saisie non acceptée récupérable en mémoire"]')!.textContent).toBe("XNote");
+    }
+  } finally { app.destroy(); }
+});
+
+it("une saisie de contexte refusée bloque ready et reste récupérable jusqu’à abandon explicite", async () => {
+  const root = document.createElement("main"); document.body.replaceChildren(root);
+  let state = initial;
+  let dispatch!: (event: DocumentDispatch) => void;
+  const actions: string[] = [];
+  const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+    if (command === "prototype_action") throw new Error("refus synthétique");
+    if (command === "document_action") {
+      actions.push((args!.action as {type:string}).type);
+      state = {...state,documentOperation:null};
+      return {snapshot:state};
+    }
+    return state;
+  });
+  const app = await mountDesktopShell(root,invoke,{listen:async callback => {dispatch = callback; return () => {};}});
+  try {
+    const field = root.querySelector<HTMLTextAreaElement>('textarea[data-dictation-field="context"]')!;
+    field.value = "Contexte non acquitté 👋";
+    field.dispatchEvent(new Event("input",{bubbles:true}));
+    state = {...state,documentOperation:{operationId:"1",noteId:1,action:"new",phase:"awaiting_ui",cancellable:true}};
+    dispatch({type:"prepare",dispatchId:"field-prepare",operationId:"1"});
+    await vi.waitFor(() => expect(root.textContent).toContain("Préparation refusée"));
+    expect(actions).not.toContain("ready");
+    expect(root.querySelector('[aria-label="Champs non acceptés récupérables en mémoire"]')!.textContent).toContain("Contexte non acquitté 👋");
+    expect(field.value).toBe("Contexte non acquitté 👋");
+    root.querySelector<HTMLButtonElement>('[data-action="document-cancel"]')!.click();
+    await vi.waitFor(() => expect(actions).toContain("cancel"));
+    expect(field.value).toBe("Contexte non acquitté 👋");
+    root.querySelector<HTMLButtonElement>('[data-action="discard-recovery"]')!.click();
+    expect(field.value).toBe(initial.context);
+    state = {...state,documentOperation:{operationId:"2",noteId:1,action:"new",phase:"awaiting_ui",cancellable:true}};
+    dispatch({type:"prepare",dispatchId:"field-retry",operationId:"2"});
+    await vi.waitFor(() => expect(actions).toContain("ready"));
+  } finally {app.destroy();}
 });

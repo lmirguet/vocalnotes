@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "preferences-window",
+  "description": "Formulaire local des modèles et opérations explicites du trousseau ; aucune commande de note.",
+  "windows": ["preferences"],
+  "permissions": [
+    "allow-preferences-get",
+    "allow-preferences-set",
+    "allow-preferences-close",
+    "allow-prototype-set-key",
+    "allow-prototype-delete-key",
+    "allow-prototype-key-presence"
+  ]
+}

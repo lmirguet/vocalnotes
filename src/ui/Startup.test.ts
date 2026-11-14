@@ -10,6 +10,48 @@ describe("socle : état natif sans effet de bord", () => {
     expect(state.kind).toBe("browser");
   });
 
+  describe("montage depuis le label natif réel", () => {
+    it.each(["main", "preferences", "unknown"])("ignore la query string pour %s", async label => {
+      vi.resetModules();
+      window.history.replaceState({}, "", "?window=preferences&label=main");
+      const root = document.createElement("main"); root.id = "app"; document.body.replaceChildren(root);
+      const invoke = vi.fn(), main = vi.fn(), preferences = vi.fn();
+      vi.doMock("@tauri-apps/api/core", () => ({isTauri:() => true,invoke}));
+      vi.doMock("@tauri-apps/api/window", () => ({getCurrentWindow:() => ({label})}));
+      vi.doMock("./DesktopShell", () => ({mountDesktopShell:main}));
+      vi.doMock("./Preferences", () => ({mountPreferences:preferences}));
+      try {
+        await import("../main");
+        expect(main).toHaveBeenCalledTimes(label === "main" ? 1 : 0);
+        expect(preferences).toHaveBeenCalledTimes(label === "preferences" ? 1 : 0);
+        expect(invoke).not.toHaveBeenCalled();
+        if (label === "unknown") expect(root.textContent).toContain("indisponible");
+      } finally {
+        for (const module of ["@tauri-apps/api/core","@tauri-apps/api/window","./DesktopShell","./Preferences"]) vi.doUnmock(module);
+        window.history.replaceState({}, "", "/");
+        vi.resetModules();
+      }
+    });
+    it("affiche un échec de création sans texte sensible ni shell de note de secours", async () => {
+      vi.resetModules();
+      const root = document.createElement("main"); root.id = "app"; document.body.replaceChildren(root);
+      const main = vi.fn(), preferences = vi.fn().mockRejectedValue(new Error("DÉTAIL À MASQUER"));
+      vi.doMock("@tauri-apps/api/core", () => ({isTauri:() => true,invoke:vi.fn()}));
+      vi.doMock("@tauri-apps/api/window", () => ({getCurrentWindow:() => ({label:"preferences"})}));
+      vi.doMock("./DesktopShell", () => ({mountDesktopShell:main}));
+      vi.doMock("./Preferences", () => ({mountPreferences:preferences}));
+      try {
+        await import("../main");
+        expect(main).not.toHaveBeenCalled();
+        expect(root.textContent).toContain("indisponible");
+        expect(root.textContent).not.toContain("DÉTAIL À MASQUER");
+      } finally {
+        for (const module of ["@tauri-apps/api/core","@tauri-apps/api/window","./DesktopShell","./Preferences"]) vi.doUnmock(module);
+        vi.resetModules();
+      }
+    });
+  });
+
   it("ne demande que l'état du socle, jamais une capture", async () => {
     const invoke = vi.fn().mockResolvedValue({
       stage: "scaffold", capture: "stopped", persistence: "unavailable",

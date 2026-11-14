@@ -177,7 +177,8 @@ fn pause_retains_intention_but_stop_purges_and_old_work_never_resumes() {
 
 #[test]
 fn failed_open_even_same_source_is_terminal_for_pipeline() {
-    let mut core = Probe::new("avant".into());
+    let mut core = Probe::new(String::new());
+    core.loaded("avant".into());
     core.start_voice(false).unwrap();
     let ticket = core.voice_ticket(1).unwrap();
     assert!(
@@ -252,7 +253,7 @@ fn inserting_adjacent_syntax_cannot_degrade_opaque_rendering() {
 }
 
 #[test]
-fn close_keeps_controlled_autosave_or_retains_note_on_failure() {
+fn legacy_close_saves_the_original_destination_on_supported_local_storage() {
     use vocalnotes_lib::platform::probe::Proposal;
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -279,25 +280,19 @@ fn close_keeps_controlled_autosave_or_retains_note_on_failure() {
         })
         .accepted
     );
-    assert!(core.request_close());
-    let destination = core.saved_destination().unwrap();
-    assert_eq!(std::fs::read_to_string(&destination).unwrap(), "après");
-    #[cfg(target_os = "linux")]
-    assert_eq!(destination, original);
-    #[cfg(not(target_os = "linux"))]
-    assert_ne!(destination, original);
+    let closed = core.request_close();
+    assert!(closed);
+    assert_eq!(
+        core.saved_destination().as_deref(),
+        Some(original.as_path())
+    );
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "après");
     let saved: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
-    assert!(saved.contains(&destination));
-    #[cfg(target_os = "linux")]
+    assert!(saved.contains(&original));
     assert_eq!(saved.len(), 1);
-    #[cfg(not(target_os = "linux"))]
-    {
-        assert_eq!(saved.len(), 2);
-        assert_eq!(std::fs::read_to_string(&original).unwrap(), "avant");
-    }
     assert!(
         saved
             .iter()
